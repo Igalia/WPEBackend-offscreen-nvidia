@@ -53,6 +53,13 @@ RUN cd /root/$LIBWPE && \
           -DENABLE_WPE_QT_API=OFF -DENABLE_COG=OFF -DENABLE_MINIBROWSER=OFF && \
     ninja -C build install
 
+COPY ./backend ./backend
+RUN cd /root/backend && \
+    meson setup build --buildtype=$MESON_BUILDTYPE --prefix=/usr && \
+    ninja -C build install && \
+    cd /usr/lib/x86_64-linux-gnu && \
+    ln -s libwpebackend-offscreen.so libWPEBackend-default.so
+
 ################################################################################
 # webview-sample
 ################################################################################
@@ -61,6 +68,8 @@ FROM ubuntu:jammy as webview-sample
 
 ENV LANG=C.UTF-8 LANGUAGE=C LC_ALL=C.UTF-8
 ARG DEBIAN_FRONTEND=noninteractive
+
+ARG MESON_BUILDTYPE=release
 
 RUN apt-get update -qq && \
     apt-get upgrade -qq && \
@@ -74,12 +83,19 @@ RUN apt-get update -qq && \
 
 COPY --from=webview-builder /usr/include/wpe-1.0 /usr/include/wpe-1.0
 COPY --from=webview-builder /usr/include/wpe-webkit-1.0 /usr/include/wpe-webkit-1.0
+COPY --from=webview-builder /usr/include/wpebackend-offscreen.h /usr/include/
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/wpe-webkit-1.0 /usr/lib/x86_64-linux-gnu/wpe-webkit-1.0
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/pkgconfig/wpe*.pc /usr/lib/x86_64-linux-gnu/pkgconfig/
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libwpe-1.0.so* /usr/lib/x86_64-linux-gnu/
+COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libwpebackend-offscreen.so /usr/lib/x86_64-linux-gnu/
+COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libWPEBackend-default.so /usr/lib/x86_64-linux-gnu/
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libWPEWebKit-1.0.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=webview-builder /usr/libexec/wpe-webkit-1.0 /usr/libexec/wpe-webkit-1.0
 
 WORKDIR /root
+COPY ./sample ./sample
+RUN cd /root/sample && \
+    meson setup build --buildtype=$MESON_BUILDTYPE && \
+    ninja -C build
 
-ENTRYPOINT [ "/bin/bash" ]
+ENTRYPOINT [ "/root/sample/build/webview-sample" ]

@@ -4,8 +4,10 @@ services:
     build:
       context: .
       target: webview-sample
+    network_mode: "host"
     environment:
         - DISPLAY=:0
+        - WEBKIT_INSPECTOR_SERVER=127.0.0.1:8787
     volumes:
         - ~/.Xauthority:/root/.Xauthority
         - /tmp/.X11-unix:/tmp/.X11-unix
