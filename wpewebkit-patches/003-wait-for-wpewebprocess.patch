@@ -1,0 +1,29 @@
+From f6c5fa2ca7ebbc82669e120101ac066b528d9406 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lo=C3=AFc=20Le=20Page?= <llepage@igalia.com>
+Date: Mon, 17 Apr 2023 17:45:25 +0200
+Subject: [PATCH] Wait for WPEWebProcess without developer mode
+
+---
+ Source/WebKit/WebProcess/wpe/WebProcessMainWPE.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/Source/WebKit/WebProcess/wpe/WebProcessMainWPE.cpp b/Source/WebKit/WebProcess/wpe/WebProcessMainWPE.cpp
+index ff5eeeb0..ac4ee6de 100644
+--- a/Source/WebKit/WebProcess/wpe/WebProcessMainWPE.cpp
++++ b/Source/WebKit/WebProcess/wpe/WebProcessMainWPE.cpp
+@@ -50,10 +50,10 @@ public:
+         PAL::GCrypt::initialize();
+ #endif
+
+-#if ENABLE(DEVELOPER_MODE)
++// #if ENABLE(DEVELOPER_MODE)
+         if (g_getenv("WEBKIT2_PAUSE_WEB_PROCESS_ON_LAUNCH"))
+             WTF::sleep(30_s);
+-#endif
++// #endif
+
+         // Required for GStreamer initialization.
+         // FIXME: This should be probably called in other processes as well.
+--
+2.34.1
+EOF

@@ -1,0 +1,7 @@
+---
+Language: Cpp
+Standard: Latest
+BasedOnStyle: Microsoft
+ColumnLimit: 120
+PointerAlignment: Left
+...

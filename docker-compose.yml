@@ -1,0 +1,11 @@
+services:
+  webview-sample:
+    image: webview-sample
+    build:
+      context: .
+      target: webview-sample
+    environment:
+        - DISPLAY=:0
+    volumes:
+        - ~/.Xauthority:/root/.Xauthority
+        - /tmp/.X11-unix:/tmp/.X11-unix
