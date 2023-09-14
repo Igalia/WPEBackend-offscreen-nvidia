@@ -33,7 +33,7 @@ namespace IPC
 class FrameAvailable final : public Message
 {
   public:
-    static constexpr uint64_t MESSAGE_CODE = 1;
+    static constexpr uint16_t MESSAGE_CODE = 1;
 
     FrameAvailable() : Message(MESSAGE_CODE)
     {
@@ -43,10 +43,49 @@ class FrameAvailable final : public Message
 class FrameComplete final : public Message
 {
   public:
-    static constexpr uint64_t MESSAGE_CODE = 2;
+    static constexpr uint16_t MESSAGE_CODE = 2;
 
     FrameComplete() : Message(MESSAGE_CODE)
     {
+    }
+};
+
+class EGLStreamFileDescriptor final : public Message
+{
+  public:
+    static constexpr uint16_t MESSAGE_CODE = 3;
+
+    EGLStreamFileDescriptor(int fd) : Message(MESSAGE_CODE, 1)
+    {
+        *getPayload<int>() = fd;
+    }
+
+    int getFD() const noexcept
+    {
+        return *getPayload<int>();
+    }
+};
+
+class EGLStream final : public Message
+{
+  public:
+    static constexpr uint16_t MESSAGE_CODE = 4;
+
+    enum class State
+    {
+        WaitingForFd,
+        Connected,
+        Error
+    };
+
+    EGLStream(State state) : Message(MESSAGE_CODE)
+    {
+        *getPayload<State>() = state;
+    }
+
+    State getState() const noexcept
+    {
+        return *getPayload<State>();
     }
 };
 } // namespace IPC

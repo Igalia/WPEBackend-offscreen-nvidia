@@ -24,40 +24,29 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#include "RendererBackendEGL.h"
 
-#include "../common/ipc.h"
-
-#include <epoxy/egl.h>
-#include <wpe/wpe-egl.h>
-
-class RendererBackendEGL final : private IPC::MessageHandler
+wpe_renderer_backend_egl_interface* RendererBackendEGL::getWPEInterface() noexcept
 {
-  public:
-    static wpe_renderer_backend_egl_interface* getWPEInterface() noexcept;
+    static wpe_renderer_backend_egl_interface s_interface = {
+        // void* create(int peerFd)
+        +[](int peerFd) -> void* { return new RendererBackendEGL(peerFd); },
+        // void destroy(void* data)
+        +[](void* data) { delete static_cast<RendererBackendEGL*>(data); },
+        // EGLNativeDisplayType get_native_display(void* data)
+        +[](void* data) -> EGLNativeDisplayType { return static_cast<RendererBackendEGL*>(data)->getDisplay(); },
+        // uint32_t get_platform(void* data)
+        +[](void* data) -> uint32_t { return static_cast<RendererBackendEGL*>(data)->getPlatform(); }, nullptr, nullptr,
+        nullptr};
 
-    ~RendererBackendEGL();
+    return &s_interface;
+}
 
-    RendererBackendEGL(RendererBackendEGL&&) = delete;
-    RendererBackendEGL& operator=(RendererBackendEGL&&) = delete;
-    RendererBackendEGL(const RendererBackendEGL&) = delete;
-    RendererBackendEGL& operator=(const RendererBackendEGL&) = delete;
+RendererBackendEGL::RendererBackendEGL(int rendererHostClientFd) noexcept : m_ipcChannel(*this, rendererHostClientFd)
+{
+}
 
-    EGLNativeDisplayType getDisplay() const noexcept
-    {
-        return m_display;
-    }
-
-    EGLenum getPlatform() const noexcept
-    {
-        return m_platform;
-    }
-
-  private:
-    RendererBackendEGL(int rendererHostClientFd) noexcept;
-    void handleMessage(IPC::Channel& channel, const IPC::Message& message) noexcept override;
-
-    IPC::Channel m_ipcChannel;
-    EGLNativeDisplayType m_display = EGL_NO_DISPLAY;
-    EGLenum m_platform = 0;
-};
+void RendererBackendEGL::handleMessage(IPC::Channel& /*channel*/, const IPC::Message& /*message*/) noexcept
+{
+    // Messages received on WPEWebProcess side from RendererHostClient on application process side
+}

@@ -26,52 +26,37 @@
 
 #pragma once
 
-#include "NativeSurface.h"
-#include "RendererBackendEGL.h"
+#include "../common/ipc.h"
 
-class RendererBackendEGLTarget final : private IPC::MessageHandler
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <wpe/wpe-egl.h>
+
+class RendererBackendEGL final : private IPC::MessageHandler
 {
   public:
-    static wpe_renderer_backend_egl_target_interface* getWPEInterface() noexcept;
+    static wpe_renderer_backend_egl_interface* getWPEInterface() noexcept;
 
-    ~RendererBackendEGLTarget()
+    ~RendererBackendEGL() = default;
+
+    RendererBackendEGL(RendererBackendEGL&&) = delete;
+    RendererBackendEGL& operator=(RendererBackendEGL&&) = delete;
+    RendererBackendEGL(const RendererBackendEGL&) = delete;
+    RendererBackendEGL& operator=(const RendererBackendEGL&) = delete;
+
+    EGLNativeDisplayType getDisplay() const noexcept
     {
-        shut();
+        return EGL_DEFAULT_DISPLAY;
     }
 
-    RendererBackendEGLTarget(RendererBackendEGLTarget&&) = delete;
-    RendererBackendEGLTarget& operator=(RendererBackendEGLTarget&&) = delete;
-    RendererBackendEGLTarget(const RendererBackendEGLTarget&) = delete;
-    RendererBackendEGLTarget& operator=(const RendererBackendEGLTarget&) = delete;
-
-    EGLNativeWindowType getNativeWindow() const noexcept
+    EGLenum getPlatform() const noexcept
     {
-        return m_nativeSurface ? m_nativeSurface->getWindow() : nullptr;
+        return EGL_PLATFORM_SURFACELESS_MESA;
     }
-
-    void init(RendererBackendEGL* backend, uint32_t width, uint32_t height) noexcept;
-    void shut() noexcept;
-
-    void resize(uint32_t width, uint32_t height) noexcept
-    {
-        if (m_nativeSurface)
-            m_nativeSurface->resize(width, height);
-    }
-
-    void frameWillRender() const noexcept;
-    void frameRendered() const noexcept;
 
   private:
-    wpe_renderer_backend_egl_target* m_wpeTarget = nullptr;
-    IPC::Channel m_ipcChannel;
-
-    RendererBackendEGLTarget(wpe_renderer_backend_egl_target* wpeTarget, int viewBackendFd) noexcept
-        : m_wpeTarget(wpeTarget), m_ipcChannel(*this, viewBackendFd)
-    {
-    }
-
+    RendererBackendEGL(int rendererHostClientFd) noexcept;
     void handleMessage(IPC::Channel& channel, const IPC::Message& message) noexcept override;
 
-    RendererBackendEGL* m_backend = nullptr;
-    std::unique_ptr<NativeSurface> m_nativeSurface;
+    IPC::Channel m_ipcChannel;
 };

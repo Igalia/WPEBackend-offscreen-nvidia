@@ -1,0 +1,48 @@
+From d863898495fca4fa96ddec96d085521b6c4ca93c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lo=C3=AFc=20Le=20Page?= <llepage@igalia.com>
+Date: Fri, 15 Sep 2023 12:58:56 +0200
+Subject: [PATCH] Add option to disable the usage of the WPEBackend-fdo audio
+ extension
+
+---
+ Source/cmake/GStreamerChecks.cmake | 4 ++++
+ Source/cmake/OptionsWPE.cmake      | 1 +
+ 2 files changed, 5 insertions(+)
+
+diff --git a/Source/cmake/GStreamerChecks.cmake b/Source/cmake/GStreamerChecks.cmake
+index fa439b1c..6409ee41 100644
+--- a/Source/cmake/GStreamerChecks.cmake
++++ b/Source/cmake/GStreamerChecks.cmake
+@@ -1,6 +1,7 @@
+ if (ENABLE_VIDEO OR ENABLE_WEB_AUDIO)
+ 
+     if (PORT STREQUAL "WPE")
++      if (ENABLE_WPEBACKEND_FDO_AUDIO_EXTENSION)
+         find_package(WPEBackend_fdo 1.9.0)
+         if ((NOT WPEBACKEND_FDO_FOUND) OR WPEBACKEND_FDO_AUDIO_EXTENSION STREQUAL "WPEBACKEND_FDO_AUDIO_EXTENSION-NOTFOUND")
+             message(WARNING "WPEBackend-fdo audio extension not found. Disabling external audio rendering support")
+@@ -8,6 +9,9 @@ if (ENABLE_VIDEO OR ENABLE_WEB_AUDIO)
+         else ()
+             SET_AND_EXPOSE_TO_BUILD(USE_WPEBACKEND_FDO_AUDIO_EXTENSION TRUE)
+         endif ()
++      else ()
++          SET_AND_EXPOSE_TO_BUILD(USE_WPEBACKEND_FDO_AUDIO_EXTENSION FALSE)
++      endif ()
+     endif ()
+ 
+     SET_AND_EXPOSE_TO_BUILD(USE_GSTREAMER TRUE)
+diff --git a/Source/cmake/OptionsWPE.cmake b/Source/cmake/OptionsWPE.cmake
+index 7098e56a..0bf5b149 100644
+--- a/Source/cmake/OptionsWPE.cmake
++++ b/Source/cmake/OptionsWPE.cmake
+@@ -97,6 +97,7 @@ WEBKIT_OPTION_DEFINE(USE_LCMS "Whether to enable support for image color managem
+ WEBKIT_OPTION_DEFINE(USE_OPENJPEG "Whether to enable support for JPEG2000 images." PUBLIC ON)
+ WEBKIT_OPTION_DEFINE(USE_SOUP2 "Whether to enable usage of Soup 2 instead of Soup 3." PUBLIC OFF)
+ WEBKIT_OPTION_DEFINE(USE_WOFF2 "Whether to enable support for WOFF2 Web Fonts." PUBLIC ON)
++WEBKIT_OPTION_DEFINE(ENABLE_WPEBACKEND_FDO_AUDIO_EXTENSION "Whether to enable support for WPEBackend-fdo audio extension (requires using this backend exclusively)." PUBLIC ON)
+ 
+ # Private options specific to the WPE port.
+ WEBKIT_OPTION_DEPEND(ENABLE_DOCUMENTATION ENABLE_INTROSPECTION)
+-- 
+2.34.1
+

@@ -32,7 +32,8 @@ namespace
 WebKitWebViewBackend* createWebViewBackend()
 {
     auto* offscreenBackend = wpe_offscreen_view_backend_create(
-        +[](wpe_offscreen_view_backend* backend, void* /*userData*/) {
+        +[](wpe_offscreen_view_backend* backend, EGLImage /*frame*/, void* /*userData*/) {
+            // TODO: draw frame
             wpe_offscreen_view_backend_dispatch_frame_complete(backend);
         },
         nullptr, 800, 600);

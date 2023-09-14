@@ -26,8 +26,9 @@
 
 #pragma once
 
+#include <glib.h>
+
 #include <cstdint>
-#include <gio/gio.h>
 
 namespace IPC
 {
@@ -35,40 +36,38 @@ class Message
 {
   public:
     static constexpr size_t MESSAGE_SIZE = 32;
-    static constexpr size_t PAYLOAD_SIZE = MESSAGE_SIZE - sizeof(uint64_t);
+    static constexpr size_t PAYLOAD_SIZE = MESSAGE_SIZE - 2 * sizeof(uint16_t);
 
     Message() noexcept = default;
-    Message(uint64_t code) noexcept : m_code(code)
-    {
-    }
 
-    uint64_t getCode() const noexcept
+    uint16_t getCode() const noexcept
     {
         return m_code;
     }
 
-    const uint8_t* getPayload() const noexcept
+    uint16_t getFDCount() const noexcept
     {
-        return m_payload;
+        return m_fdCount;
     }
 
-    uint8_t* getPayload() noexcept
+    template <typename T> T* getPayload() noexcept
     {
-        return m_payload;
+        return reinterpret_cast<T*>(m_payload);
     }
 
-    const char* exposeAsBuffer() const noexcept
+    template <typename T> const T* getPayload() const noexcept
     {
-        return reinterpret_cast<const char*>(this);
+        return reinterpret_cast<const T*>(m_payload);
     }
 
-    char* exposeAsBuffer() noexcept
+  protected:
+    Message(uint16_t code, uint16_t fdCount = 0) noexcept : m_code(code), m_fdCount(fdCount)
     {
-        return reinterpret_cast<char*>(this);
     }
 
   private:
-    uint64_t m_code = 0;
+    uint16_t m_code = 0;
+    uint16_t m_fdCount = 0;
     uint8_t m_payload[PAYLOAD_SIZE] = {};
 };
 static_assert(sizeof(Message) == Message::MESSAGE_SIZE, "IPC Message class size is wrong");
@@ -91,17 +90,23 @@ class Channel
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
 
-    bool sendMessage(const Message& message) const noexcept;
+    bool sendMessage(const Message& message) noexcept;
+
     int detachPeerFd() noexcept;
     void closeChannel() noexcept;
 
   private:
-    bool configureLocalSocketFromFd(int localFd) noexcept;
-
-    MessageHandler& m_handler;
-    GSocket* m_localSocket = nullptr;
-    GSource* m_socketSource = nullptr;
+    int m_localFd = -1;
     int m_peerFd = -1;
+    bool configureLocalEndpoint(int localFd) noexcept;
+
+    static gboolean idleCallback(Channel* channel) noexcept;
+    GSource* m_idleSource = nullptr;
+    MessageHandler& m_handler;
+
+    bool readNextMessage(Message& message) noexcept;
+    bool writeFileDescriptor(int fd) noexcept;
+    int readFileDescriptor() noexcept;
 };
 
 class MessageHandler
@@ -111,14 +116,12 @@ class MessageHandler
 
     virtual void handleMessage(Channel& channel, const Message& message) noexcept = 0;
 
-    virtual void handleError(Channel& channel, const GError* /*error*/) noexcept
+    virtual void handleError(Channel& /*channel*/, int /*errnoValue*/) noexcept
     {
-        channel.closeChannel();
     }
 
-    virtual void handlePeerClosed(Channel& channel) noexcept
+    virtual void handlePeerClosed(Channel& /*channel*/) noexcept
     {
-        channel.closeChannel();
     }
 };
 } // namespace IPC

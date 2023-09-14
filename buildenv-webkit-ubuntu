@@ -1,0 +1,152 @@
+#!/bin/bash -e
+
+MESON_BUILD_TYPE=debugoptimized
+CMAKE_BUILD_TYPE=RelWithDebInfo
+BUILD_DEPS=false
+
+readonly BASE_DIR=$(dirname $(readlink -en $0))/webkit-2.38
+readonly INSTALL_PREFIX=$BASE_DIR/dist
+
+readonly LIBWPE=libwpe-1.14.1
+readonly WPEWEBKIT=wpewebkit-2.38.6
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --debug)
+        MESON_BUILD_TYPE=debug
+        CMAKE_BUILD_TYPE=Debug
+        ;;
+
+    --release)
+        MESON_BUILD_TYPE=release
+        CMAKE_BUILD_TYPE=Release
+        ;;
+
+    --build)
+        BUILD_DEPS=true
+        ;;
+
+    *)
+        echo "Unkown parameter: $1"
+        ;;
+    esac
+    shift
+done
+
+typeset -r MESON_BUILD_TYPE
+typeset -r CMAKE_BUILD_TYPE
+typeset -r BUILD_DEPS
+
+readonly PKG_PATH=$INSTALL_PREFIX/lib/x86_64-linux-gnu/pkgconfig:$INSTALL_PREFIX/lib/pkgconfig
+if [ -n "$PKG_CONFIG_PATH" ]; then
+    export PKG_CONFIG_PATH=$PKG_PATH:$PKG_CONFIG_PATH
+else
+    export PKG_CONFIG_PATH=$PKG_PATH
+fi
+
+function install_build_deps
+{
+    sudo apt-get install -qq \
+        pkg-config gperf libegl1-mesa-dev libxkbcommon-dev libatk-bridge2.0-dev libatk1.0-dev libcairo2-dev \
+        libepoxy-dev libgbm-dev libgcrypt20-dev libgstreamer-plugins-base1.0-dev libgstreamer1.0-dev libharfbuzz-dev \
+        libicu-dev libjpeg-dev liblcms2-dev libopenjp2-7-dev libsoup2.4-dev libsqlite3-dev libsystemd-dev \
+        libtasn1-6-dev libwayland-dev libwebp-dev libwoff-dev libxslt1-dev wayland-protocols libglib2.0-dev \
+        libgtk-3-dev libfontconfig1-dev libfreetype6-dev libhyphen-dev libmanette-0.2-dev libnotify-dev libxml2-dev \
+        libgudev-1.0-dev bison flex libpng-dev libxt-dev libenchant-2-dev libsecret-1-dev libgl-dev \
+        libgles-dev libjavascriptcoregtk-4.1-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-gl \
+        libgl1-mesa-dri patchelf unifdef ruby-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-bad
+}
+
+function prepare_sources
+{
+    mkdir -p $BASE_DIR/sources
+    cd $BASE_DIR/sources
+
+    local SRC_PACKAGE
+    for SRC_PACKAGE in $LIBWPE $WPEWEBKIT; do
+        if [ ! -d $SRC_PACKAGE ]; then
+            if [ ! -f $SRC_PACKAGE.tar.xz ]; then
+                wget https://wpewebkit.org/releases/$SRC_PACKAGE.tar.xz
+            fi
+            tar -xf $SRC_PACKAGE.tar.xz
+
+            if [ "$SRC_PACKAGE" = "$WPEWEBKIT" ]; then
+                local PATCH_DIR=$BASE_DIR/../wpewebkit-patches
+                local PATCH_FILE
+                for PATCH_FILE in $(ls $PATCH_DIR/*.patch); do
+                    patch -d $BASE_DIR/sources/$WPEWEBKIT -f -l -p1 < $PATCH_FILE
+                done
+            fi
+        fi
+    done
+}
+
+function build_libwpe
+{
+    cd $BASE_DIR/sources/$LIBWPE
+    if [ ! -f build/build.ninja ]; then
+        rm -rf build
+        meson setup --buildtype=$MESON_BUILD_TYPE --prefix=$INSTALL_PREFIX build
+    fi
+
+    ninja -C build install
+    patchelf --set-rpath '$ORIGIN' --force-rpath $INSTALL_PREFIX/lib/x86_64-linux-gnu/libwpe-1.0.so
+}
+
+function build_wpewebkit
+{
+    cd $BASE_DIR/sources/$WPEWEBKIT
+    if [ ! -f build/build.ninja ]; then
+        rm -rf build
+        cmake -S. -Bbuild -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
+            -DPORT=WPE -DENABLE_ACCESSIBILITY=OFF -DENABLE_BUBBLEWRAP_SANDBOX=OFF -DENABLE_DOCUMENTATION=OFF \
+            -DENABLE_GAMEPAD=OFF -DENABLE_INTROSPECTION=OFF -DENABLE_JOURNALD_LOG=OFF \
+            -DENABLE_OFFSCREEN_CANVAS=ON -DENABLE_OFFSCREEN_CANVAS_IN_WORKERS=ON \
+            -DENABLE_PDFJS=OFF -DENABLE_WEBDRIVER=OFF -DUSE_SOUP2=ON -DUSE_AVIF=OFF \
+            -DENABLE_WPE_QT_API=OFF -DENABLE_COG=OFF -DENABLE_MINIBROWSER=OFF \
+            -DENABLE_WPEBACKEND_FDO_AUDIO_EXTENSION=OFF
+    fi
+
+    ninja -C build install
+    patchelf --set-rpath '$ORIGIN/../..' --force-rpath $INSTALL_PREFIX/lib/wpe-webkit-1.0/injected-bundle/libWPEInjectedBundle.so
+    patchelf --set-rpath '$ORIGIN/../../lib' --force-rpath $INSTALL_PREFIX/libexec/wpe-webkit-1.0/WPENetworkProcess
+    patchelf --set-rpath '$ORIGIN/../../lib' --force-rpath $INSTALL_PREFIX/libexec/wpe-webkit-1.0/WPEWebProcess
+    patchelf --set-rpath '$ORIGIN/x86_64-linux-gnu' --force-rpath $INSTALL_PREFIX/lib/libWPEWebKit-1.0.so
+
+    if [ "$CMAKE_BUILD_TYPE" != "Release" ]; then
+        gdb-add-index $INSTALL_PREFIX/lib/libWPEWebKit-1.0.so
+        cp -fL $INSTALL_PREFIX/lib/libWPEWebKit-1.0.so $INSTALL_PREFIX/lib/libWPEWebKit-1.0.so.debug
+        strip --strip-debug $INSTALL_PREFIX/lib/libWPEWebKit-1.0.so
+    fi
+}
+
+function build
+{
+    prepare_sources
+    build_libwpe
+    build_wpewebkit
+}
+
+if [ ! -d $BASE_DIR ]; then
+    mkdir -p $BASE_DIR
+    install_build_deps
+    build
+elif [ "$BUILD_DEPS" = "true" -o ! -d $INSTALL_PREFIX ]; then
+    build
+fi
+
+export WEBKIT_INSPECTOR_SERVER=127.0.0.1:8787
+export INSTALL_PREFIX
+
+# Optional environment variables set for NVidia Prime systems
+# to select the NVidia GPU
+export __NV_PRIME_RENDER_OFFLOAD=1
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
+export __GL_SYNC_TO_VBLANK=1
+
+export LD_LIBRARY_PATH=$(readlink -mn $BASE_DIR/../build/subprojects/wpebackend-offscreen)
+cd $BASE_DIR/..
+$SHELL
+
+exit 0

@@ -1,13 +1,24 @@
+################################################################################
+# The volumes configuration is only used to display the visual result of the
+# consumer process through the host X11 server (`xhost +` must be priorly
+# called on the host to authorize the connection).
+################################################################################
+
 services:
   webview-sample:
     image: webview-sample
+    privileged: true # Needed to duplicate the EGLStream fd between processes
     build:
       context: .
       target: webview-sample
-    network_mode: "host"
     environment:
-        - DISPLAY=:0
         - WEBKIT_INSPECTOR_SERVER=127.0.0.1:8787
     volumes:
         - ~/.Xauthority:/root/.Xauthority
         - /tmp/.X11-unix:/tmp/.X11-unix
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]

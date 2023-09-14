@@ -26,8 +26,10 @@
 
 #pragma once
 
-#include "../common/ipc.h"
+#include "../common/ipc-messages.h"
 #include "../wpebackend-offscreen.h"
+
+#include <EGL/eglext.h>
 
 struct wpe_offscreen_view_backend
 {
@@ -47,7 +49,7 @@ class ViewBackend final : public wpe_offscreen_view_backend, private IPC::Messag
         uint32_t height;
     };
 
-    ~ViewBackend() = default;
+    ~ViewBackend();
 
     ViewBackend(ViewBackend&&) = delete;
     ViewBackend& operator=(ViewBackend&&) = delete;
@@ -73,4 +75,10 @@ class ViewBackend final : public wpe_offscreen_view_backend, private IPC::Messag
     }
 
     void handleMessage(IPC::Channel& channel, const IPC::Message& message) noexcept override;
+    void onRemoteEGLStreamStateChanged(IPC::EGLStream::State state) noexcept;
+    void onFrameAvailable() noexcept;
+
+    EGLDisplay m_display = EGL_NO_DISPLAY;
+    EGLStreamKHR m_eglStream = EGL_NO_STREAM_KHR;
+    int m_eglStreamFD = -1;
 };

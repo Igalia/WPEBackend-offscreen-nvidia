@@ -26,6 +26,7 @@
 
 #include "NativeSurface.h"
 
+#include <EGL/eglext.h>
 #include <X11/Xlib.h>
 #include <glib.h>
 

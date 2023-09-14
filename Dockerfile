@@ -50,11 +50,12 @@ RUN cd /root/$LIBWPE && \
           -DENABLE_GAMEPAD=OFF -DENABLE_INTROSPECTION=OFF -DENABLE_JOURNALD_LOG=OFF \
           -DENABLE_OFFSCREEN_CANVAS=ON -DENABLE_OFFSCREEN_CANVAS_IN_WORKERS=ON \
           -DENABLE_PDFJS=OFF -DENABLE_WEBDRIVER=OFF -DUSE_SOUP2=ON -DUSE_AVIF=OFF \
-          -DENABLE_WPE_QT_API=OFF -DENABLE_COG=OFF -DENABLE_MINIBROWSER=OFF && \
+          -DENABLE_WPE_QT_API=OFF -DENABLE_COG=OFF -DENABLE_MINIBROWSER=OFF \
+          -DENABLE_WPEBACKEND_FDO_AUDIO_EXTENSION=OFF && \
     ninja -C build install
 
-COPY ./backend ./backend
-RUN cd /root/backend && \
+COPY ./subprojects/wpebackend-offscreen ./wpebackend-offscreen
+RUN cd /root/wpebackend-offscreen && \
     meson setup build --buildtype=$MESON_BUILDTYPE --prefix=/usr && \
     ninja -C build install && \
     cd /usr/lib/x86_64-linux-gnu && \
@@ -71,12 +72,18 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 ARG MESON_BUILDTYPE=release
 
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=graphics,display
+# The "display" capability and the "libglx-mesa0" dependency are only
+# useful to leverage hardware acceleration through the X11 connection.
+# If only offscreen rendering is needed, both items can be removed.
+
 RUN apt-get update -qq && \
     apt-get upgrade -qq && \
     apt-get install -qq --no-install-recommends \
         python3-pip pkg-config build-essential \
         gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-        libgstreamer-gl1.0-0 libepoxy0 libharfbuzz-icu0 libjpeg8 \
+        libgstreamer-gl1.0-0 libepoxy0 libharfbuzz-icu0 libjpeg8 libglx-mesa0 \
         libxslt1.1 liblcms2-2 libopenjp2-7 libwebpdemux2 libwoff1 libcairo2 \
         libglib2.0-dev libsoup2.4-dev libxkbcommon-dev libegl1-mesa-dev && \
     pip3 install meson ninja
@@ -93,9 +100,19 @@ COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libWPEWebKit-1.0.so* /usr/
 COPY --from=webview-builder /usr/libexec/wpe-webkit-1.0 /usr/libexec/wpe-webkit-1.0
 
 WORKDIR /root
-COPY ./sample ./sample
-RUN cd /root/sample && \
+RUN mkdir -p /usr/share/glvnd/egl_vendor.d && \
+    cat <<EOF > /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+{
+    "file_format_version" : "1.0.0",
+    "ICD" : {
+        "library_path" : "libEGL_nvidia.so.0"
+    }
+}
+EOF
+
+COPY ./subprojects/webview-sample ./webview-sample
+RUN cd /root/webview-sample && \
     meson setup build --buildtype=$MESON_BUILDTYPE && \
     ninja -C build
 
-ENTRYPOINT [ "/root/sample/build/webview-sample" ]
+ENTRYPOINT DISPLAY=:0 /root/webview-sample/build/webview-sample

@@ -26,46 +26,28 @@
 
 #pragma once
 
-#include <epoxy/egl.h>
-#include <memory>
+#include <EGL/egl.h>
+#include <wpe/wpe.h>
 
-class NativeSurface
+#ifdef __cplusplus
+extern "C"
 {
-  public:
-    static std::unique_ptr<NativeSurface> createNativeSurface(EGLenum platform, EGLNativeDisplayType display,
-                                                              unsigned int width, unsigned int height) noexcept;
-    virtual ~NativeSurface() = default;
+#endif
 
-    NativeSurface(NativeSurface&&) = delete;
-    NativeSurface& operator=(NativeSurface&&) = delete;
-    NativeSurface(const NativeSurface&) = delete;
-    NativeSurface& operator=(const NativeSurface&) = delete;
+    struct wpe_offscreen_view_backend;
+    typedef void (*wpe_offscreen_on_frame_available_callback)(struct wpe_offscreen_view_backend* offscreen_backend,
+                                                              EGLImage frame, void* user_data);
 
-    unsigned int getWidth() const noexcept
-    {
-        return m_width;
-    }
+    // The returned wpe_offscreen_view_backend pointer is also stored into the interface_data field of the
+    // associated wpe_view_backend_base, so it is automatically destroyed when calling wpe_view_backend_destroy.
+    struct wpe_offscreen_view_backend* wpe_offscreen_view_backend_create(wpe_offscreen_on_frame_available_callback cb,
+                                                                         void* user_data, uint32_t width,
+                                                                         uint32_t height);
 
-    unsigned int getHeight() const noexcept
-    {
-        return m_height;
-    }
+    struct wpe_view_backend* wpe_offscreen_view_backend_get_wpe_backend(
+        struct wpe_offscreen_view_backend* offscreen_backend);
+    void wpe_offscreen_view_backend_dispatch_frame_complete(struct wpe_offscreen_view_backend* offscreen_backend);
 
-    EGLNativeWindowType getWindow() const noexcept
-    {
-        return m_window;
-    }
-
-    void resize(unsigned int width, unsigned int height) noexcept;
-
-  protected:
-    NativeSurface(EGLNativeDisplayType display, unsigned int width, unsigned int height);
-
-    unsigned int m_width = 1;
-    unsigned int m_height = 1;
-
-    EGLNativeDisplayType m_display = nullptr;
-    EGLNativeWindowType m_window = nullptr;
-
-    virtual void resizeUnderlyingWindow() noexcept = 0;
-};
+#ifdef __cplusplus
+}
+#endif
