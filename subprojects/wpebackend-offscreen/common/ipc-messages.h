@@ -66,7 +66,7 @@ class EGLStreamFileDescriptor final : public Message
     }
 };
 
-class EGLStream final : public Message
+class EGLStreamState final : public Message
 {
   public:
     static constexpr uint16_t MESSAGE_CODE = 4;
@@ -78,7 +78,7 @@ class EGLStream final : public Message
         Error
     };
 
-    EGLStream(State state) : Message(MESSAGE_CODE)
+    EGLStreamState(State state) : Message(MESSAGE_CODE)
     {
         *getPayload<State>() = state;
     }

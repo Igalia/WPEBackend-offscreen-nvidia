@@ -1,0 +1,29 @@
+From d5ec787266da6a1f5982a5e79f3c7938a0ff9a45 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lo=C3=AFc=20Le=20Page?= <llepage@igalia.com>
+Date: Tue, 19 Sep 2023 13:21:30 +0200
+Subject: [PATCH] Fix surfaceless GLContextEGL creation
+
+---
+ Source/WebCore/platform/graphics/egl/GLContextEGL.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/Source/WebCore/platform/graphics/egl/GLContextEGL.cpp b/Source/WebCore/platform/graphics/egl/GLContextEGL.cpp
+index d5efa070..5f200edc 100644
+--- a/Source/WebCore/platform/graphics/egl/GLContextEGL.cpp
++++ b/Source/WebCore/platform/graphics/egl/GLContextEGL.cpp
+@@ -122,9 +122,11 @@ bool GLContextEGL::getEGLConfig(EGLDisplay display, EGLConfig* config, EGLSurfac
+         attributeList[13] = EGL_PIXMAP_BIT;
+         break;
+     case GLContextEGL::WindowSurface:
+-    case GLContextEGL::Surfaceless:
+         attributeList[13] = EGL_WINDOW_BIT;
+         break;
++    case GLContextEGL::Surfaceless:
++        attributeList[13] = EGL_STREAM_BIT_KHR;
++        break;
+     }
+
+     EGLint count;
+--
+2.34.1
+

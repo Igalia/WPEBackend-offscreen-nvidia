@@ -9,13 +9,15 @@ build_args = ['-DEGL_NO_PLATFORM_SPECIFIC_TYPES']
 wpe_dep = dependency('wpe-1.0', version: '>=1.14', required: true)
 glib_dep = dependency('glib-2.0', version: '>=2.6', required: true)
 egl_dep = dependency('egl', version: '>=1.5', required: true)
-build_deps = [wpe_dep, glib_dep, egl_dep]
+glesv2_dep = dependency('glesv2', version: '>=3.0', required: true)
+build_deps = [wpe_dep, glib_dep, egl_dep, glesv2_dep]
 link_deps = [wpe_dep, egl_dep]
 
 build_src = [
     'application-side/RendererHost.cpp',
     'application-side/RendererHostClient.cpp',
     'application-side/ViewBackend.cpp',
+    'common/EGLStream.cpp',
     'common/ipc.cpp',
     'common/wpebackend-offscreen.cpp',
     'wpewebprocess-side/RendererBackendEGL.cpp',

@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "../common/EGLStream.h"
 #include "RendererBackendEGL.h"
 
 class RendererBackendEGLTarget final : private IPC::MessageHandler
@@ -46,9 +47,7 @@ class RendererBackendEGLTarget final : private IPC::MessageHandler
     void init(RendererBackendEGL* backend, uint32_t width, uint32_t height) noexcept;
     void shut() noexcept;
 
-    void resize(uint32_t width, uint32_t height) noexcept;
-
-    void frameWillRender() const noexcept;
+    void frameWillRender() noexcept;
     void frameRendered() noexcept;
 
   private:
@@ -61,13 +60,11 @@ class RendererBackendEGLTarget final : private IPC::MessageHandler
     }
 
     void handleMessage(IPC::Channel& channel, const IPC::Message& message) noexcept override;
-    bool connectEGLStream(int fd) noexcept;
 
     RendererBackendEGL* m_backend = nullptr;
     uint32_t m_width = 0;
     uint32_t m_height = 0;
-    bool m_bResized = false;
 
-    EGLDisplay m_display = EGL_NO_DISPLAY;
-    EGLStreamKHR m_eglStream = EGL_NO_STREAM_KHR;
+    int m_consumerStreamFD = -1;
+    std::unique_ptr<EGLProducerStream> m_producerStream;
 };

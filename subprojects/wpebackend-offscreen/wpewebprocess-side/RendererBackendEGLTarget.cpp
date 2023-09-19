@@ -28,32 +28,6 @@
 
 #include "../common/ipc-messages.h"
 
-namespace
-{
-PFNEGLCREATESTREAMFROMFILEDESCRIPTORKHRPROC eglCreateStreamFromFileDescriptorKHR = nullptr;
-PFNEGLDESTROYSTREAMKHRPROC eglDestroyStreamKHR = nullptr;
-
-bool initEGLStreamsExtension() noexcept
-{
-    if (!eglCreateStreamFromFileDescriptorKHR)
-    {
-        eglCreateStreamFromFileDescriptorKHR = reinterpret_cast<PFNEGLCREATESTREAMFROMFILEDESCRIPTORKHRPROC>(
-            eglGetProcAddress("eglCreateStreamFromFileDescriptorKHR"));
-        if (!eglCreateStreamFromFileDescriptorKHR)
-            return false;
-    }
-
-    if (!eglDestroyStreamKHR)
-    {
-        eglDestroyStreamKHR = reinterpret_cast<PFNEGLDESTROYSTREAMKHRPROC>(eglGetProcAddress("eglDestroyStreamKHR"));
-        if (!eglDestroyStreamKHR)
-            return false;
-    }
-
-    return true;
-}
-} // namespace
-
 wpe_renderer_backend_egl_target_interface* RendererBackendEGLTarget::getWPEInterface() noexcept
 {
     static wpe_renderer_backend_egl_target_interface s_interface = {
@@ -71,9 +45,7 @@ wpe_renderer_backend_egl_target_interface* RendererBackendEGLTarget::getWPEInter
         // EGLNativeWindowType get_native_window(void* data)
         +[](void*) -> EGLNativeWindowType { return nullptr; },
         // void resize(void* data, uint32_t width, uint32_t height)
-        +[](void* data, uint32_t width, uint32_t height) {
-            static_cast<RendererBackendEGLTarget*>(data)->resize(width, height);
-        },
+        +[](void*, uint32_t, uint32_t) {},
         // void frame_will_render(void* data)
         +[](void* data) { static_cast<RendererBackendEGLTarget*>(data)->frameWillRender(); },
         // void frame_rendered(void* data)
@@ -92,19 +64,11 @@ void RendererBackendEGLTarget::init(RendererBackendEGL* backend, uint32_t width,
         return;
     }
 
-    if (!initEGLStreamsExtension())
-    {
-        g_critical("EGLStream extensions are not available");
-        return;
-    }
-
     m_backend = backend;
     m_width = width;
     m_height = height;
-    m_bResized = true;
 
-    m_display = eglGetPlatformDisplay(backend->getPlatform(), backend->getDisplay(), nullptr);
-    m_ipcChannel.sendMessage(IPC::EGLStream(IPC::EGLStream::State::WaitingForFd));
+    m_ipcChannel.sendMessage(IPC::EGLStreamState(IPC::EGLStreamState::State::WaitingForFd));
 }
 
 void RendererBackendEGLTarget::shut() noexcept
@@ -112,44 +76,49 @@ void RendererBackendEGLTarget::shut() noexcept
     m_backend = nullptr;
     m_width = 0;
     m_height = 0;
-    m_bResized = false;
 
-    if (m_display)
+    m_producerStream.reset();
+
+    if (m_consumerStreamFD != -1)
     {
-        if (m_eglStream)
-            eglDestroyStreamKHR(m_display, m_eglStream);
-
-        eglTerminate(m_display);
-        m_display = nullptr;
-    }
-
-    m_eglStream = nullptr;
-}
-
-void RendererBackendEGLTarget::resize(uint32_t width, uint32_t height) noexcept
-{
-    if ((width != m_width) || (height != m_height))
-    {
-        m_width = width;
-        m_height = height;
-        m_bResized = true;
+        close(m_consumerStreamFD);
+        m_consumerStreamFD = -1;
     }
 }
 
-void RendererBackendEGLTarget::frameWillRender() const noexcept
+void RendererBackendEGLTarget::frameWillRender() noexcept
 {
     // Frame drawing started in ThreadedCompositor::renderLayerTree() from WPEWebProcess
+    if (!m_producerStream)
+    {
+        if (m_consumerStreamFD == -1)
+            return;
 
-    // TODO: prepare FBO and render to texture
+        m_producerStream = EGLProducerStream::createEGLStream(eglGetCurrentDisplay(), eglGetCurrentContext(), m_width,
+                                                              m_height, m_consumerStreamFD);
+        close(m_consumerStreamFD);
+        m_consumerStreamFD = -1;
+
+        if (!m_producerStream)
+        {
+            m_ipcChannel.sendMessage(IPC::EGLStreamState(IPC::EGLStreamState::State::Error));
+            g_critical("Cannot create the producer EGLStream on RendererBackendEGLTarget side");
+            return;
+        }
+
+        m_ipcChannel.sendMessage(IPC::EGLStreamState(IPC::EGLStreamState::State::Connected));
+    }
+
+    m_producerStream->makeCurrent();
 }
 
 void RendererBackendEGLTarget::frameRendered() noexcept
 {
-    // Frame drawing finished (and buffers swapped) in ThreadedCompositor::renderLayerTree() from WPEWebProcess
-
-    // TODO: convert FBO texture to EGLImage and push it to the EGLStream
-
-    m_ipcChannel.sendMessage(IPC::FrameAvailable());
+    // Frame drawing finished in ThreadedCompositor::renderLayerTree() from WPEWebProcess
+    if (m_producerStream && m_producerStream->swapBuffers())
+        m_ipcChannel.sendMessage(IPC::FrameAvailable());
+    else
+        wpe_renderer_backend_egl_target_dispatch_frame_complete(m_wpeTarget);
 }
 
 void RendererBackendEGLTarget::handleMessage(IPC::Channel& /*channel*/, const IPC::Message& message) noexcept
@@ -158,7 +127,7 @@ void RendererBackendEGLTarget::handleMessage(IPC::Channel& /*channel*/, const IP
     switch (message.getCode())
     {
     case IPC::EGLStreamFileDescriptor::MESSAGE_CODE:
-        connectEGLStream(static_cast<const IPC::EGLStreamFileDescriptor&>(message).getFD());
+        m_consumerStreamFD = static_cast<const IPC::EGLStreamFileDescriptor&>(message).getFD();
         break;
 
     case IPC::FrameComplete::MESSAGE_CODE:
@@ -168,35 +137,4 @@ void RendererBackendEGLTarget::handleMessage(IPC::Channel& /*channel*/, const IP
     default:
         break;
     }
-}
-
-bool RendererBackendEGLTarget::connectEGLStream(int fd) noexcept
-{
-    if (fd == -1)
-    {
-        m_ipcChannel.sendMessage(IPC::EGLStream(IPC::EGLStream::State::Error));
-        g_critical("Invalid EGLStream file descriptor received on RendererBackendEGLTarget side");
-        return false;
-    }
-
-    if (m_eglStream)
-    {
-        close(fd);
-        m_ipcChannel.sendMessage(IPC::EGLStream(IPC::EGLStream::State::Error));
-        g_warning("EGLStream is already connected");
-        return false;
-    }
-
-    m_eglStream = eglCreateStreamFromFileDescriptorKHR(m_display, fd);
-    close(fd);
-
-    if (!m_eglStream)
-    {
-        m_ipcChannel.sendMessage(IPC::EGLStream(IPC::EGLStream::State::Error));
-        g_critical("Cannot connect EGLStream on RendererBackendEGLTarget side");
-        return false;
-    }
-
-    m_ipcChannel.sendMessage(IPC::EGLStream(IPC::EGLStream::State::Connected));
-    return true;
 }

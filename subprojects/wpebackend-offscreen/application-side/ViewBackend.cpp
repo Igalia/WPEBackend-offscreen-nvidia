@@ -26,39 +26,9 @@
 
 #include "ViewBackend.h"
 
-namespace
-{
-PFNEGLCREATESTREAMKHRPROC eglCreateStreamKHR = nullptr;
-PFNEGLDESTROYSTREAMKHRPROC eglDestroyStreamKHR = nullptr;
-PFNEGLGETSTREAMFILEDESCRIPTORKHRPROC eglGetStreamFileDescriptorKHR = nullptr;
+#include <GLES2/gl2ext.h>
 
-bool initEGLStreamsExtension() noexcept
-{
-    if (!eglCreateStreamKHR)
-    {
-        eglCreateStreamKHR = reinterpret_cast<PFNEGLCREATESTREAMKHRPROC>(eglGetProcAddress("eglCreateStreamKHR"));
-        if (!eglCreateStreamKHR)
-            return false;
-    }
-
-    if (!eglDestroyStreamKHR)
-    {
-        eglDestroyStreamKHR = reinterpret_cast<PFNEGLDESTROYSTREAMKHRPROC>(eglGetProcAddress("eglDestroyStreamKHR"));
-        if (!eglDestroyStreamKHR)
-            return false;
-    }
-
-    if (!eglGetStreamFileDescriptorKHR)
-    {
-        eglGetStreamFileDescriptorKHR =
-            reinterpret_cast<PFNEGLGETSTREAMFILEDESCRIPTORKHRPROC>(eglGetProcAddress("eglGetStreamFileDescriptorKHR"));
-        if (!eglGetStreamFileDescriptorKHR)
-            return false;
-    }
-
-    return true;
-}
-} // namespace
+#include <cassert>
 
 wpe_view_backend_interface* ViewBackend::getWPEInterface() noexcept
 {
@@ -83,13 +53,14 @@ wpe_view_backend_interface* ViewBackend::getWPEInterface() noexcept
 
 ViewBackend::~ViewBackend()
 {
-    if (m_eglStreamFD != -1)
-        close(m_eglStreamFD);
-
     if (m_display)
     {
-        if (m_eglStream)
-            eglDestroyStreamKHR(m_display, m_eglStream);
+        eglMakeCurrent(m_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (m_eglImage)
+            eglDestroyImage(m_display, m_eglImage);
+
+        if (m_eglContext)
+            eglDestroyContext(m_display, m_eglContext);
 
         eglTerminate(m_display);
     }
@@ -97,42 +68,40 @@ ViewBackend::~ViewBackend()
 
 void ViewBackend::initialize() noexcept
 {
-    if (m_eglStream)
+    if (m_display)
     {
         g_warning("ViewBackend is already initialized");
         return;
     }
 
-    m_display = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
-
     EGLint major, minor;
-    if (!eglInitialize(m_display, &major, &minor) || !initEGLStreamsExtension())
+    m_display = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
+    if (!m_display || !eglInitialize(m_display, &major, &minor))
     {
-        g_critical("Cannot initialize EGL or EGLStream extensions on ViewBackend side");
-        eglTerminate(m_display);
-        m_display = EGL_NO_DISPLAY;
+        if (m_display)
+        {
+            eglTerminate(m_display);
+            m_display = EGL_NO_DISPLAY;
+        }
+        g_critical("Cannot initialize EGL on ViewBackend side");
         return;
     }
 
-    static constexpr const EGLint s_streamAttribs[] = {EGL_STREAM_FIFO_LENGTH_KHR, 1,
-                                                       EGL_CONSUMER_ACQUIRE_TIMEOUT_USEC_KHR, -1, EGL_NONE};
-    m_eglStream = eglCreateStreamKHR(m_display, s_streamAttribs);
-    if (!m_eglStream)
+    m_consumerStream = EGLConsumerStream::createEGLStream(m_display);
+    if (!m_consumerStream)
     {
-        g_critical("Cannot create EGLStream on ViewBackend side");
         eglTerminate(m_display);
         m_display = EGL_NO_DISPLAY;
+        g_critical("Cannot create the consumer EGLStream on ViewBackend side");
         return;
     }
 
-    m_eglStreamFD = eglGetStreamFileDescriptorKHR(m_display, m_eglStream);
-    if (m_eglStreamFD == -1)
+    if (!createGLESRenderer() || !m_consumerStream->bindStreamToCurrentExternalTexture())
     {
-        g_critical("Cannot get EGLStream file descriptor on ViewBackend side");
-        eglDestroyStreamKHR(m_display, m_eglStream);
-        m_eglStream = EGL_NO_STREAM_KHR;
+        m_consumerStream.reset();
         eglTerminate(m_display);
         m_display = EGL_NO_DISPLAY;
+        g_critical("Cannot create the GLES renderer on ViewBackend side");
         return;
     }
 
@@ -141,6 +110,9 @@ void ViewBackend::initialize() noexcept
 
 void ViewBackend::frameComplete() noexcept
 {
+    if (m_consumerStream)
+        m_consumerStream->releaseFrame();
+
     wpe_view_backend_dispatch_frame_displayed(m_wpeViewBackend);
     m_ipcChannel.sendMessage(IPC::FrameComplete());
 }
@@ -150,8 +122,8 @@ void ViewBackend::handleMessage(IPC::Channel& /*channel*/, const IPC::Message& m
     // Messages received on application process side from RendererBackendEGLTarget on WPEWebProcess side
     switch (message.getCode())
     {
-    case IPC::EGLStream::MESSAGE_CODE:
-        onRemoteEGLStreamStateChanged(static_cast<const IPC::EGLStream&>(message).getState());
+    case IPC::EGLStreamState::MESSAGE_CODE:
+        onRemoteEGLStreamStateChanged(static_cast<const IPC::EGLStreamState&>(message).getState());
         break;
 
     case IPC::FrameAvailable::MESSAGE_CODE:
@@ -163,50 +135,30 @@ void ViewBackend::handleMessage(IPC::Channel& /*channel*/, const IPC::Message& m
     }
 }
 
-void ViewBackend::onRemoteEGLStreamStateChanged(IPC::EGLStream::State state) noexcept
+void ViewBackend::onRemoteEGLStreamStateChanged(IPC::EGLStreamState::State state) noexcept
 {
     switch (state)
     {
-    case IPC::EGLStream::State::WaitingForFd:
-        if (m_eglStreamFD != -1)
+    case IPC::EGLStreamState::State::WaitingForFd:
+        if (m_consumerStream)
         {
-            m_ipcChannel.sendMessage(IPC::EGLStreamFileDescriptor(m_eglStreamFD));
-            close(m_eglStreamFD);
-            m_eglStreamFD = -1;
-        }
-        else
-        {
-            if (m_eglStream)
+            int fd = m_consumerStream->getStreamFD();
+            if (fd != -1)
             {
-                if (m_display)
-                    eglDestroyStreamKHR(m_display, m_eglStream);
-
-                m_eglStream = EGL_NO_STREAM_KHR;
+                m_ipcChannel.sendMessage(IPC::EGLStreamFileDescriptor(fd));
+                m_consumerStream->closeStreamFD();
+                return;
             }
-
-            g_critical("EGLStream doesn't exist on ViewBackend side");
         }
+        g_critical("EGLStream doesn't exist on ViewBackend side");
         break;
 
-    case IPC::EGLStream::State::Connected:
+    case IPC::EGLStreamState::State::Connected:
         g_info("EGLStream successfully connected");
         break;
 
-    case IPC::EGLStream::State::Error:
-        if (m_eglStreamFD != -1)
-        {
-            close(m_eglStreamFD);
-            m_eglStreamFD = -1;
-        }
-
-        if (m_eglStream)
-        {
-            if (m_display)
-                eglDestroyStreamKHR(m_display, m_eglStream);
-
-            m_eglStream = EGL_NO_STREAM_KHR;
-        }
-
+    case IPC::EGLStreamState::State::Error:
+        m_consumerStream.reset();
         g_critical("Cannot connect EGLStream");
         break;
     }
@@ -214,11 +166,90 @@ void ViewBackend::onRemoteEGLStreamStateChanged(IPC::EGLStream::State state) noe
 
 void ViewBackend::onFrameAvailable() noexcept
 {
-    // TODO: extract frame from the EGLStream
-    EGLImage frame = EGL_NO_IMAGE;
-
-    if (m_viewParams.onFrameAvailableCB)
-        m_viewParams.onFrameAvailableCB(this, frame, m_viewParams.userData);
-    else
+    if (!m_viewParams.onFrameAvailableCB || !m_consumerStream || !m_consumerStream->acquireFrame())
+    {
         frameComplete();
+        return;
+    }
+
+    assert(m_eglImage);
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, m_viewParams.width, m_viewParams.height, 0);
+    glFlush();
+    m_viewParams.onFrameAvailableCB(this, m_eglImage, m_viewParams.userData);
+}
+
+bool ViewBackend::createGLESRenderer() noexcept
+{
+    assert(m_display);
+    assert(!m_eglContext);
+
+    static constexpr const EGLint s_configAttribs[] = {EGL_SURFACE_TYPE,
+                                                       EGL_STREAM_BIT_KHR,
+                                                       EGL_RED_SIZE,
+                                                       8,
+                                                       EGL_GREEN_SIZE,
+                                                       8,
+                                                       EGL_BLUE_SIZE,
+                                                       8,
+                                                       EGL_ALPHA_SIZE,
+                                                       8,
+                                                       EGL_RENDERABLE_TYPE,
+                                                       EGL_OPENGL_ES_BIT,
+                                                       EGL_NONE};
+    EGLConfig config = {};
+    EGLint numConfigs = 0;
+    if (!eglChooseConfig(m_display, s_configAttribs, &config, 1, &numConfigs) || (numConfigs != 1))
+        return false;
+
+    if (!eglBindAPI(EGL_OPENGL_ES_API))
+        return false;
+
+    static constexpr const EGLint s_contextAttribs[] = {EGL_CONTEXT_MAJOR_VERSION, 2, EGL_NONE};
+    m_eglContext = eglCreateContext(m_display, config, EGL_NO_CONTEXT, s_contextAttribs);
+    if (!m_eglContext)
+        return false;
+
+    if (!eglMakeCurrent(m_display, EGL_NO_SURFACE, EGL_NO_SURFACE, m_eglContext))
+    {
+        eglDestroyContext(m_display, m_eglContext);
+        m_eglContext = EGL_NO_CONTEXT;
+        return false;
+    }
+
+    glGenFramebuffers(1, &m_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+
+    glGenTextures(1, &m_srcTexture);
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_srcTexture);
+    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_EXTERNAL_OES, m_srcTexture, 0);
+
+    glGenTextures(1, &m_destTexture);
+    glBindTexture(GL_TEXTURE_2D, m_destTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_viewParams.width, m_viewParams.height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 nullptr);
+
+    assert(!m_eglImage);
+    m_eglImage = eglCreateImage(m_display, m_eglContext, EGL_GL_TEXTURE_2D,
+                                reinterpret_cast<EGLClientBuffer>(m_destTexture), nullptr);
+    if (!m_eglImage)
+    {
+        eglMakeCurrent(m_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        m_fbo = 0;
+        m_srcTexture = 0;
+        m_destTexture = 0;
+        eglDestroyContext(m_display, m_eglContext);
+        m_eglContext = EGL_NO_CONTEXT;
+        return false;
+    }
+
+    return true;
 }
