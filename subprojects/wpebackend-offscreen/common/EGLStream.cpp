@@ -119,13 +119,13 @@ EGLStream::~EGLStream()
         eglDestroyStreamKHR(m_display, m_eglStream);
 }
 
-EGLStream::Status EGLStream::getStatus() const noexcept
+EGLStream::StreamStatus EGLStream::getStatus() const noexcept
 {
     EGLint status = 0;
     if (eglQueryStreamKHR(m_display, m_eglStream, EGL_STREAM_STATE_KHR, &status))
-        return static_cast<Status>(status);
+        return static_cast<StreamStatus>(status);
     else
-        return Status::Error;
+        return StreamStatus::Error;
 }
 
 std::unique_ptr<EGLConsumerStream> EGLConsumerStream::createEGLStream(EGLDisplay display) noexcept
@@ -135,8 +135,8 @@ std::unique_ptr<EGLConsumerStream> EGLConsumerStream::createEGLStream(EGLDisplay
 
     std::unique_ptr<EGLConsumerStream> stream(new EGLConsumerStream(display));
 
-    static constexpr const EGLint s_streamAttribs[] = {EGL_STREAM_FIFO_LENGTH_KHR, 1,
-                                                       EGL_CONSUMER_ACQUIRE_TIMEOUT_USEC_KHR, -1, EGL_NONE};
+    static constexpr const EGLint s_streamAttribs[] = {
+        EGL_STREAM_FIFO_LENGTH_KHR, 1, EGL_CONSUMER_ACQUIRE_TIMEOUT_USEC_KHR, ACQUIRE_MAX_TIMEOUT_USEC, EGL_NONE};
     stream->m_eglStream = eglCreateStreamKHR(display, s_streamAttribs);
     if (!stream->m_eglStream)
         return nullptr;

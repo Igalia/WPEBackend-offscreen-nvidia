@@ -67,4 +67,5 @@ class RendererBackendEGLTarget final : private IPC::MessageHandler
 
     int m_consumerStreamFD = -1;
     std::unique_ptr<EGLProducerStream> m_producerStream;
+    bool m_frameRendered = false;
 };

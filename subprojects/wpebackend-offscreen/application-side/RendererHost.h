@@ -36,7 +36,7 @@ class RendererHost final
   public:
     static wpe_renderer_host_interface* getWPEInterface() noexcept;
 
-    ~RendererHost() = default;
+    ~RendererHost();
 
     RendererHost(RendererHost&&) = delete;
     RendererHost& operator=(RendererHost&&) = delete;
@@ -48,5 +48,5 @@ class RendererHost final
 
   private:
     RendererHost() = default;
-    std::vector<RendererHostClient> m_clients;
+    std::vector<RendererHostClient*> m_clients;
 };

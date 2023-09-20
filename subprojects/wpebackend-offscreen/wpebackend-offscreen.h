@@ -42,7 +42,7 @@ extern "C"
     // associated wpe_view_backend_base, so it is automatically destroyed when calling wpe_view_backend_destroy.
     struct wpe_offscreen_view_backend* wpe_offscreen_view_backend_create(wpe_offscreen_on_frame_available_callback cb,
                                                                          void* user_data, uint32_t width,
-                                                                         uint32_t height);
+                                                                         uint32_t height, EGLNativeDisplayType display);
 
     struct wpe_view_backend* wpe_offscreen_view_backend_get_wpe_backend(
         struct wpe_offscreen_view_backend* offscreen_backend);

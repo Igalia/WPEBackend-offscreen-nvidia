@@ -79,16 +79,15 @@ class Channel
     Channel(MessageHandler& handler) noexcept;
     Channel(MessageHandler& handler, int peerFd) noexcept;
 
-    Channel(Channel&& other) noexcept;
-    Channel& operator=(Channel&& other) noexcept;
+    Channel(Channel&& other) = delete;
+    Channel& operator=(Channel&& other) = delete;
+    Channel(const Channel&) = delete;
+    Channel& operator=(const Channel&) = delete;
 
     virtual ~Channel()
     {
         closeChannel();
     }
-
-    Channel(const Channel&) = delete;
-    Channel& operator=(const Channel&) = delete;
 
     bool sendMessage(const Message& message) noexcept;
 
@@ -101,7 +100,7 @@ class Channel
     bool configureLocalEndpoint(int localFd) noexcept;
 
     static gboolean idleCallback(Channel* channel) noexcept;
-    GSource* m_idleSource = nullptr;
+    guint m_idleSourceId = 0;
     MessageHandler& m_handler;
 
     bool readNextMessage(Message& message) noexcept;

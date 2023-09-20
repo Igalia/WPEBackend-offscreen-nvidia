@@ -59,34 +59,6 @@ Channel::Channel(MessageHandler& handler, int peerFd) noexcept : m_handler(handl
     configureLocalEndpoint(peerFd);
 }
 
-Channel::Channel(Channel&& other) noexcept
-    : m_localFd(other.m_localFd), m_peerFd(other.m_peerFd), m_idleSource(other.m_idleSource), m_handler(other.m_handler)
-{
-    other.m_localFd = -1;
-    other.m_peerFd = -1;
-    other.m_idleSource = nullptr;
-
-    if (m_idleSource)
-        g_source_set_callback(m_idleSource, G_SOURCE_FUNC(idleCallback), this, nullptr);
-}
-
-Channel& Channel::operator=(Channel&& other) noexcept
-{
-    m_localFd = other.m_localFd;
-    m_peerFd = other.m_peerFd;
-    m_idleSource = other.m_idleSource;
-    m_handler = other.m_handler;
-
-    other.m_localFd = -1;
-    other.m_peerFd = -1;
-    other.m_idleSource = nullptr;
-
-    if (m_idleSource)
-        g_source_set_callback(m_idleSource, G_SOURCE_FUNC(idleCallback), this, nullptr);
-
-    return *this;
-}
-
 bool Channel::sendMessage(const Message& message) noexcept
 {
     if (m_localFd == -1)
@@ -132,17 +104,16 @@ int Channel::detachPeerFd() noexcept
 
 void Channel::closeChannel() noexcept
 {
+    if (m_idleSourceId)
+    {
+        g_source_remove(m_idleSourceId);
+        m_idleSourceId = 0;
+    }
+
     if (m_peerFd != -1)
     {
         close(m_peerFd);
         m_peerFd = -1;
-    }
-
-    if (m_idleSource)
-    {
-        g_source_destroy(m_idleSource);
-        g_source_unref(m_idleSource);
-        m_idleSource = nullptr;
     }
 
     if (m_localFd != -1)
@@ -155,21 +126,12 @@ void Channel::closeChannel() noexcept
 bool Channel::configureLocalEndpoint(int localFd) noexcept
 {
     assert(localFd != -1);
-    assert(!m_idleSource);
+    assert(!m_idleSourceId);
 
     m_localFd = localFd;
-    m_idleSource = g_idle_source_new();
-    g_source_set_priority(m_idleSource, G_PRIORITY_DEFAULT);
-    g_source_set_callback(m_idleSource, G_SOURCE_FUNC(idleCallback), this, nullptr);
-
-    if (!g_source_attach(m_idleSource, g_main_context_get_thread_default()))
+    m_idleSourceId = g_idle_add(G_SOURCE_FUNC(idleCallback), this);
+    if (!m_idleSourceId)
     {
-        g_source_unref(m_idleSource);
-        m_idleSource = nullptr;
-
-        close(m_localFd);
-        m_localFd = -1;
-
         g_critical("Cannot attach idle source for IPC channel");
         return false;
     }
@@ -180,7 +142,7 @@ bool Channel::configureLocalEndpoint(int localFd) noexcept
 gboolean Channel::idleCallback(Channel* channel) noexcept
 {
     Message message;
-    while (channel->readNextMessage(message))
+    if (channel->readNextMessage(message))
         channel->m_handler.handleMessage(*channel, message);
 
     return G_SOURCE_CONTINUE;

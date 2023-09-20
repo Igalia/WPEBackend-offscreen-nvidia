@@ -27,10 +27,14 @@
 #pragma once
 
 #include "../common/EGLStream.h"
-#include "../common/ipc-messages.h"
+#include "../common/ipc.h"
 #include "../wpebackend-offscreen.h"
 
 #include <GLES2/gl2.h>
+
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 struct wpe_offscreen_view_backend
 {
@@ -48,9 +52,13 @@ class ViewBackend final : public wpe_offscreen_view_backend, private IPC::Messag
         void* userData;
         uint32_t width;
         uint32_t height;
+        EGLNativeDisplayType nativeDisplay;
     };
 
-    ~ViewBackend();
+    ~ViewBackend()
+    {
+        shut();
+    }
 
     ViewBackend(ViewBackend&&) = delete;
     ViewBackend& operator=(ViewBackend&&) = delete;
@@ -62,12 +70,13 @@ class ViewBackend final : public wpe_offscreen_view_backend, private IPC::Messag
         return m_wpeViewBackend;
     }
 
-    void initialize() noexcept;
+    void init() noexcept;
+    void shut() noexcept;
     void frameComplete() noexcept;
 
   private:
     const ViewParams m_viewParams;
-    wpe_view_backend* m_wpeViewBackend = nullptr;
+    wpe_view_backend* const m_wpeViewBackend;
     IPC::Channel m_ipcChannel;
 
     ViewBackend(const ViewParams& viewParams, wpe_view_backend* wpeViewBackend) noexcept
@@ -75,18 +84,27 @@ class ViewBackend final : public wpe_offscreen_view_backend, private IPC::Messag
     {
     }
 
-    EGLDisplay m_display = EGL_NO_DISPLAY;
+    EGLDisplay m_eglDisplay = EGL_NO_DISPLAY;
     EGLContext m_eglContext = EGL_NO_CONTEXT;
     std::unique_ptr<EGLConsumerStream> m_consumerStream;
-
     void handleMessage(IPC::Channel& channel, const IPC::Message& message) noexcept override;
-    void onRemoteEGLStreamStateChanged(IPC::EGLStreamState::State state) noexcept;
-    void onFrameAvailable() noexcept;
 
+    GLuint m_program = 0;
+    GLuint m_vbo = 0;
     GLuint m_fbo = 0;
     GLuint m_srcTexture = 0;
     GLuint m_destTexture = 0;
     EGLImage m_eglImage = EGL_NO_IMAGE;
-
     bool createGLESRenderer() noexcept;
+
+    static gboolean idleCallback(ViewBackend* backend) noexcept;
+    guint m_idleSourceId = 0;
+    std::atomic<EGLImage> m_availableFrame = EGL_NO_IMAGE;
+
+    std::atomic_bool m_stopConsumer = false;
+    bool m_fetchNextFrame = false;
+    std::thread m_consumerThread;
+    std::mutex m_consumerMutex;
+    std::condition_variable m_consumerCondition;
+    void consumerThreadFunc() noexcept;
 };

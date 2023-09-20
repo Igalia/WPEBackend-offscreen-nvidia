@@ -43,10 +43,16 @@ wpe_renderer_host_interface* RendererHost::getWPEInterface() noexcept
     return &s_interface;
 }
 
+RendererHost::~RendererHost()
+{
+    for (RendererHostClient* client : m_clients)
+        delete client;
+}
+
 RendererHostClient& RendererHost::addClient() noexcept
 {
-    m_clients.push_back({this});
-    return m_clients.back();
+    m_clients.push_back(new RendererHostClient(this));
+    return *m_clients.back();
 }
 
 void RendererHost::removeClient(const RendererHostClient* client) noexcept
@@ -56,9 +62,10 @@ void RendererHost::removeClient(const RendererHostClient* client) noexcept
 
     for (auto it = m_clients.cbegin(); it != m_clients.cend(); ++it)
     {
-        if (std::addressof(*it) == client)
+        if (*it == client)
         {
             m_clients.erase(it);
+            delete client;
             break;
         }
     }

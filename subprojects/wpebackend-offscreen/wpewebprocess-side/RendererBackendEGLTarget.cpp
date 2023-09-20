@@ -78,6 +78,7 @@ void RendererBackendEGLTarget::shut() noexcept
     m_height = 0;
 
     m_producerStream.reset();
+    m_frameRendered = false;
 
     if (m_consumerStreamFD != -1)
     {
@@ -89,6 +90,8 @@ void RendererBackendEGLTarget::shut() noexcept
 void RendererBackendEGLTarget::frameWillRender() noexcept
 {
     // Frame drawing started in ThreadedCompositor::renderLayerTree() from WPEWebProcess
+    m_frameRendered = false;
+
     if (!m_producerStream)
     {
         if (m_consumerStreamFD == -1)
@@ -109,16 +112,17 @@ void RendererBackendEGLTarget::frameWillRender() noexcept
         m_ipcChannel.sendMessage(IPC::EGLStreamState(IPC::EGLStreamState::State::Connected));
     }
 
-    m_producerStream->makeCurrent();
+    if (m_producerStream->makeCurrent())
+        m_frameRendered = true;
 }
 
 void RendererBackendEGLTarget::frameRendered() noexcept
 {
     // Frame drawing finished in ThreadedCompositor::renderLayerTree() from WPEWebProcess
-    if (m_producerStream && m_producerStream->swapBuffers())
-        m_ipcChannel.sendMessage(IPC::FrameAvailable());
-    else
-        wpe_renderer_backend_egl_target_dispatch_frame_complete(m_wpeTarget);
+    if (m_frameRendered)
+        m_producerStream->swapBuffers();
+
+    wpe_renderer_backend_egl_target_dispatch_frame_complete(m_wpeTarget);
 }
 
 void RendererBackendEGLTarget::handleMessage(IPC::Channel& /*channel*/, const IPC::Message& message) noexcept
@@ -128,10 +132,6 @@ void RendererBackendEGLTarget::handleMessage(IPC::Channel& /*channel*/, const IP
     {
     case IPC::EGLStreamFileDescriptor::MESSAGE_CODE:
         m_consumerStreamFD = static_cast<const IPC::EGLStreamFileDescriptor&>(message).getFD();
-        break;
-
-    case IPC::FrameComplete::MESSAGE_CODE:
-        wpe_renderer_backend_egl_target_dispatch_frame_complete(m_wpeTarget);
         break;
 
     default:

@@ -41,7 +41,7 @@ class EGLStream
     EGLStream(const EGLStream&) = delete;
     EGLStream& operator=(const EGLStream&) = delete;
 
-    enum class Status : EGLint
+    enum class StreamStatus : EGLint
     {
         Error = 0,
         Created = EGL_STREAM_STATE_CREATED_KHR,
@@ -52,7 +52,7 @@ class EGLStream
         Disconnected = EGL_STREAM_STATE_DISCONNECTED_KHR
     };
 
-    Status getStatus() const noexcept;
+    StreamStatus getStatus() const noexcept;
 
   protected:
     const EGLDisplay m_display;
@@ -66,6 +66,8 @@ class EGLStream
 class EGLConsumerStream final : public EGLStream
 {
   public:
+    static constexpr int ACQUIRE_MAX_TIMEOUT_USEC = 1000 * 1000;
+
     static std::unique_ptr<EGLConsumerStream> createEGLStream(EGLDisplay display) noexcept;
 
     ~EGLConsumerStream() override;
