@@ -30,8 +30,6 @@
 #include "../common/ipc.h"
 #include "../wpebackend-offscreen.h"
 
-#include <GLES2/gl2.h>
-
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -52,7 +50,6 @@ class ViewBackend final : public wpe_offscreen_view_backend, private IPC::Messag
         void* userData;
         uint32_t width;
         uint32_t height;
-        EGLNativeDisplayType nativeDisplay;
     };
 
     ~ViewBackend()
@@ -85,17 +82,8 @@ class ViewBackend final : public wpe_offscreen_view_backend, private IPC::Messag
     }
 
     EGLDisplay m_eglDisplay = EGL_NO_DISPLAY;
-    EGLContext m_eglContext = EGL_NO_CONTEXT;
     std::unique_ptr<EGLConsumerStream> m_consumerStream;
     void handleMessage(IPC::Channel& channel, const IPC::Message& message) noexcept override;
-
-    GLuint m_program = 0;
-    GLuint m_vbo = 0;
-    GLuint m_fbo = 0;
-    GLuint m_srcTexture = 0;
-    GLuint m_destTexture = 0;
-    EGLImage m_eglImage = EGL_NO_IMAGE;
-    bool createGLESRenderer() noexcept;
 
     static gboolean idleCallback(ViewBackend* backend) noexcept;
     guint m_idleSourceId = 0;

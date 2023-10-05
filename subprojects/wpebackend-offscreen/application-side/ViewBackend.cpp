@@ -28,8 +28,6 @@
 
 #include "../common/ipc-messages.h"
 
-#include <GLES2/gl2ext.h>
-
 #include <cassert>
 
 wpe_view_backend_interface* ViewBackend::getWPEInterface() noexcept
@@ -61,11 +59,7 @@ void ViewBackend::init() noexcept
         return;
     }
 
-    if (m_viewParams.nativeDisplay)
-        m_eglDisplay = eglGetDisplay(m_viewParams.nativeDisplay);
-
-    if (!m_eglDisplay)
-        m_eglDisplay = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
+    m_eglDisplay = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
 
     EGLint major, minor;
     if (!m_eglDisplay || !eglInitialize(m_eglDisplay, &major, &minor))
@@ -85,16 +79,7 @@ void ViewBackend::init() noexcept
         return;
     }
 
-    if (!createGLESRenderer() || !m_consumerStream->bindStreamToCurrentExternalTexture())
-    {
-        shut();
-        g_critical("Cannot create the GLES renderer on ViewBackend side");
-        return;
-    }
-
-    eglMakeCurrent(m_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     m_consumerThread = std::thread(&ViewBackend::consumerThreadFunc, this);
-
     wpe_view_backend_dispatch_set_size(m_wpeViewBackend, m_viewParams.width, m_viewParams.height);
 }
 
@@ -125,25 +110,9 @@ void ViewBackend::shut() noexcept
 
     if (m_eglDisplay)
     {
-        eglMakeCurrent(m_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        if (m_eglImage)
-            eglDestroyImage(m_eglDisplay, m_eglImage);
-
-        if (m_eglContext)
-            eglDestroyContext(m_eglDisplay, m_eglContext);
-
         eglTerminate(m_eglDisplay);
         m_eglDisplay = EGL_NO_DISPLAY;
     }
-
-    m_eglImage = EGL_NO_IMAGE;
-    m_eglContext = EGL_NO_CONTEXT;
-
-    m_program = 0;
-    m_vbo = 0;
-    m_fbo = 0;
-    m_srcTexture = 0;
-    m_destTexture = 0;
 }
 
 void ViewBackend::frameComplete() noexcept
@@ -193,133 +162,6 @@ void ViewBackend::handleMessage(IPC::Channel& /*channel*/, const IPC::Message& m
     }
 }
 
-bool ViewBackend::createGLESRenderer() noexcept
-{
-    assert(m_eglDisplay);
-    assert(!m_eglContext);
-
-    static constexpr const EGLint s_configAttribs[] = {
-        EGL_SURFACE_TYPE,    EGL_PBUFFER_BIT,   EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES_BIT, EGL_NONE};
-    EGLConfig config = {};
-    EGLint numConfigs = 0;
-    if (!eglChooseConfig(m_eglDisplay, s_configAttribs, &config, 1, &numConfigs) || (numConfigs != 1))
-        return false;
-
-    if (!eglBindAPI(EGL_OPENGL_ES_API))
-        return false;
-
-    static constexpr const EGLint s_contextAttribs[] = {EGL_CONTEXT_MAJOR_VERSION, 2, EGL_NONE};
-    m_eglContext = eglCreateContext(m_eglDisplay, config, EGL_NO_CONTEXT, s_contextAttribs);
-    if (!m_eglContext || !eglMakeCurrent(m_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, m_eglContext))
-        return false;
-
-    static constexpr const char s_vxtSource[] = R"EOS(
-attribute vec2 aVtxPosition;
-
-varying vec2 vTexCoord;
-
-void main()
-{
-    gl_Position = vec4(aVtxPosition, 0.0, 1.0);
-    vTexCoord = 0.5 * (aVtxPosition + 1.0);
-    vTexCoord.y = 1.0 - vTexCoord.y;
-}
-)EOS";
-    static constexpr int s_vxtSourceLength = sizeof(s_vxtSource);
-
-    GLuint vtxShader = glCreateShader(GL_VERTEX_SHADER);
-    const char* source = s_vxtSource;
-    glShaderSource(vtxShader, 1, &source, &s_vxtSourceLength);
-    glCompileShader(vtxShader);
-
-    static constexpr const char s_fragSource[] = R"EOS(
-#extension GL_OES_EGL_image_external : require
-
-precision highp float;
-
-uniform samplerExternalOES uImageTex;
-
-varying vec2 vTexCoord;
-
-void main()
-{
-    gl_FragColor = texture2D(uImageTex, vTexCoord);
-}
-)EOS";
-    static constexpr int s_fragSourceLength = sizeof(s_fragSource);
-
-    GLuint fragShader = glCreateShader(GL_FRAGMENT_SHADER);
-    source = s_fragSource;
-    glShaderSource(fragShader, 1, &source, &s_fragSourceLength);
-    glCompileShader(fragShader);
-
-    m_program = glCreateProgram();
-    glAttachShader(m_program, vtxShader);
-    glAttachShader(m_program, fragShader);
-    glLinkProgram(m_program);
-
-    glDeleteShader(vtxShader);
-    glDeleteShader(fragShader);
-
-    GLint status = 0;
-    glGetProgramiv(m_program, GL_LINK_STATUS, &status);
-    if (!status)
-    {
-        GLsizei bufferSize = 0;
-        glGetProgramiv(m_program, GL_INFO_LOG_LENGTH, &bufferSize);
-        if (bufferSize > 0)
-        {
-            GLchar* buffer = new GLchar[bufferSize];
-            glGetProgramInfoLog(m_program, bufferSize, nullptr, buffer);
-            g_warning("Shader compilation error:\n%s\n", buffer);
-            delete[] buffer;
-        }
-
-        return false;
-    }
-
-    static constexpr const float s_plane[] = {-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0};
-
-    glGenBuffers(1, &m_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(s_plane), s_plane, GL_STATIC_DRAW);
-
-    glUseProgram(m_program);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
-
-    glGenTextures(1, &m_srcTexture);
-    glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_srcTexture);
-    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glGenTextures(1, &m_destTexture);
-    glBindTexture(GL_TEXTURE_2D, m_destTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_viewParams.width, m_viewParams.height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                 nullptr);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    glGenFramebuffers(1, &m_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_destTexture, 0);
-    glViewport(0, 0, m_viewParams.width, m_viewParams.height);
-
-    assert(!m_eglImage);
-    m_eglImage = eglCreateImage(m_eglDisplay, m_eglContext, EGL_GL_TEXTURE_2D,
-                                reinterpret_cast<EGLClientBuffer>(m_destTexture), nullptr);
-    if (!m_eglImage)
-        return false;
-
-    return true;
-}
-
 gboolean ViewBackend::idleCallback(ViewBackend* backend) noexcept
 {
     EGLImage frame = backend->m_availableFrame.exchange(EGL_NO_IMAGE);
@@ -337,25 +179,19 @@ gboolean ViewBackend::idleCallback(ViewBackend* backend) noexcept
 void ViewBackend::consumerThreadFunc() noexcept
 {
     assert(m_consumerStream);
-    assert(m_eglDisplay);
-    assert(m_eglContext);
-
-    eglMakeCurrent(m_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, m_eglContext);
 
     while (!m_stopConsumer)
     {
-        if (!m_consumerStream->acquireFrame())
+        EGLImage frame = m_consumerStream->acquireFrame();
+        if (!frame)
             continue;
 
-        glClear(GL_COLOR_BUFFER_BIT);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glFinish();
-        m_consumerStream->releaseFrame();
-
-        m_availableFrame = m_eglImage;
+        m_availableFrame = frame;
 
         std::unique_lock<std::mutex> lock(m_consumerMutex);
         m_fetchNextFrame = false;
         m_consumerCondition.wait(lock, [this] { return m_fetchNextFrame; });
+
+        m_consumerStream->releaseFrame();
     }
 }

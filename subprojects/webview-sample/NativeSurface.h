@@ -56,11 +56,6 @@ class NativeSurface final
         return m_height;
     }
 
-    EGLNativeDisplayType getNativeDisplay() const noexcept
-    {
-        return m_nativeDisplay;
-    }
-
     void draw(EGLImage frame) const noexcept;
     void close() noexcept;
     bool isClosed() noexcept;

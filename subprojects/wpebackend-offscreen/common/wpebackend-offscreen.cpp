@@ -93,10 +93,9 @@ extern "C"
 }
 
 __attribute__((visibility("default"))) wpe_offscreen_view_backend* wpe_offscreen_view_backend_create(
-    wpe_offscreen_on_frame_available_callback cb, void* user_data, uint32_t width, uint32_t height,
-    EGLNativeDisplayType display)
+    wpe_offscreen_on_frame_available_callback cb, void* user_data, uint32_t width, uint32_t height)
 {
-    ViewBackend::ViewParams viewParams = {cb, user_data, width, height, display};
+    ViewBackend::ViewParams viewParams = {cb, user_data, width, height};
     wpe_view_backend_create_with_backend_interface(ViewBackend::getWPEInterface(), &viewParams);
     return static_cast<wpe_offscreen_view_backend*>(viewParams.userData);
 }

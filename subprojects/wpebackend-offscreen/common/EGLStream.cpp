@@ -31,12 +31,13 @@ namespace
 PFNEGLCREATESTREAMKHRPROC eglCreateStreamKHR = nullptr;
 PFNEGLDESTROYSTREAMKHRPROC eglDestroyStreamKHR = nullptr;
 PFNEGLGETSTREAMFILEDESCRIPTORKHRPROC eglGetStreamFileDescriptorKHR = nullptr;
-PFNEGLSTREAMCONSUMERGLTEXTUREEXTERNALKHRPROC eglStreamConsumerGLTextureExternalKHR = nullptr;
-PFNEGLSTREAMCONSUMERACQUIREKHRPROC eglStreamConsumerAcquireKHR = nullptr;
-PFNEGLSTREAMCONSUMERRELEASEKHRPROC eglStreamConsumerReleaseKHR = nullptr;
 PFNEGLQUERYSTREAMKHRPROC eglQueryStreamKHR = nullptr;
 PFNEGLCREATESTREAMFROMFILEDESCRIPTORKHRPROC eglCreateStreamFromFileDescriptorKHR = nullptr;
 PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC eglCreateStreamProducerSurfaceKHR = nullptr;
+PFNEGLSTREAMIMAGECONSUMERCONNECTNVPROC eglStreamImageConsumerConnectNV = nullptr;
+PFNEGLSTREAMACQUIREIMAGENVPROC eglStreamAcquireImageNV = nullptr;
+PFNEGLSTREAMRELEASEIMAGENVPROC eglStreamReleaseImageNV = nullptr;
+PFNEGLQUERYSTREAMCONSUMEREVENTNVPROC eglQueryStreamConsumerEventNV = nullptr;
 
 bool initEGLStreamsExtensions() noexcept
 {
@@ -62,30 +63,6 @@ bool initEGLStreamsExtensions() noexcept
             return false;
     }
 
-    if (!eglStreamConsumerGLTextureExternalKHR)
-    {
-        eglStreamConsumerGLTextureExternalKHR = reinterpret_cast<PFNEGLSTREAMCONSUMERGLTEXTUREEXTERNALKHRPROC>(
-            eglGetProcAddress("eglStreamConsumerGLTextureExternalKHR"));
-        if (!eglStreamConsumerGLTextureExternalKHR)
-            return false;
-    }
-
-    if (!eglStreamConsumerAcquireKHR)
-    {
-        eglStreamConsumerAcquireKHR =
-            reinterpret_cast<PFNEGLSTREAMCONSUMERACQUIREKHRPROC>(eglGetProcAddress("eglStreamConsumerAcquireKHR"));
-        if (!eglStreamConsumerAcquireKHR)
-            return false;
-    }
-
-    if (!eglStreamConsumerReleaseKHR)
-    {
-        eglStreamConsumerReleaseKHR =
-            reinterpret_cast<PFNEGLSTREAMCONSUMERRELEASEKHRPROC>(eglGetProcAddress("eglStreamConsumerReleaseKHR"));
-        if (!eglStreamConsumerReleaseKHR)
-            return false;
-    }
-
     if (!eglQueryStreamKHR)
     {
         eglQueryStreamKHR = reinterpret_cast<PFNEGLQUERYSTREAMKHRPROC>(eglGetProcAddress("eglQueryStreamKHR"));
@@ -106,6 +83,38 @@ bool initEGLStreamsExtensions() noexcept
         eglCreateStreamProducerSurfaceKHR = reinterpret_cast<PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC>(
             eglGetProcAddress("eglCreateStreamProducerSurfaceKHR"));
         if (!eglCreateStreamProducerSurfaceKHR)
+            return false;
+    }
+
+    if (!eglStreamImageConsumerConnectNV)
+    {
+        eglStreamImageConsumerConnectNV = reinterpret_cast<PFNEGLSTREAMIMAGECONSUMERCONNECTNVPROC>(
+            eglGetProcAddress("eglStreamImageConsumerConnectNV"));
+        if (!eglStreamImageConsumerConnectNV)
+            return false;
+    }
+
+    if (!eglStreamAcquireImageNV)
+    {
+        eglStreamAcquireImageNV =
+            reinterpret_cast<PFNEGLSTREAMACQUIREIMAGENVPROC>(eglGetProcAddress("eglStreamAcquireImageNV"));
+        if (!eglStreamAcquireImageNV)
+            return false;
+    }
+
+    if (!eglStreamReleaseImageNV)
+    {
+        eglStreamReleaseImageNV =
+            reinterpret_cast<PFNEGLSTREAMRELEASEIMAGENVPROC>(eglGetProcAddress("eglStreamReleaseImageNV"));
+        if (!eglStreamReleaseImageNV)
+            return false;
+    }
+
+    if (!eglQueryStreamConsumerEventNV)
+    {
+        eglQueryStreamConsumerEventNV =
+            reinterpret_cast<PFNEGLQUERYSTREAMCONSUMEREVENTNVPROC>(eglGetProcAddress("eglQueryStreamConsumerEventNV"));
+        if (!eglQueryStreamConsumerEventNV)
             return false;
     }
 
@@ -145,6 +154,9 @@ std::unique_ptr<EGLConsumerStream> EGLConsumerStream::createEGLStream(EGLDisplay
     if (stream->m_streamFD == -1)
         return nullptr;
 
+    if (!eglStreamImageConsumerConnectNV(stream->m_display, stream->m_eglStream, 0, nullptr, nullptr))
+        return nullptr;
+
     return stream;
 }
 
@@ -152,6 +164,9 @@ EGLConsumerStream::~EGLConsumerStream()
 {
     if (m_streamFD != -1)
         close(m_streamFD);
+
+    if (m_eglImage)
+        eglDestroyImage(m_display, m_eglImage);
 }
 
 void EGLConsumerStream::closeStreamFD() noexcept
@@ -163,19 +178,51 @@ void EGLConsumerStream::closeStreamFD() noexcept
     }
 }
 
-bool EGLConsumerStream::bindStreamToCurrentExternalTexture() const noexcept
+EGLImage EGLConsumerStream::acquireFrame() noexcept
 {
-    return eglStreamConsumerGLTextureExternalKHR(m_display, m_eglStream);
-}
+    EGLenum event = 0;
+    EGLAttrib data = 0;
+    if (!eglQueryStreamConsumerEventNV(m_display, m_eglStream, ACQUIRE_MAX_TIMEOUT_USEC * 1000, &event, &data))
+        return EGL_NO_IMAGE;
 
-bool EGLConsumerStream::acquireFrame() const noexcept
-{
-    return eglStreamConsumerAcquireKHR(m_display, m_eglStream);
+    switch (event)
+    {
+    case EGL_STREAM_IMAGE_ADD_NV:
+        if (m_eglImage)
+            eglDestroyImage(m_display, m_eglImage);
+
+        m_eglImage = eglCreateImage(m_display, EGL_NO_CONTEXT, EGL_STREAM_CONSUMER_IMAGE_NV,
+                                    static_cast<EGLClientBuffer>(m_eglStream), nullptr);
+        break;
+
+    case EGL_STREAM_IMAGE_REMOVE_NV:
+        if (data)
+        {
+            EGLImage image = reinterpret_cast<EGLImage>(data);
+            eglDestroyImage(m_display, image);
+            if (image == m_eglImage)
+                m_eglImage = EGL_NO_IMAGE;
+        }
+        break;
+
+    case EGL_STREAM_IMAGE_AVAILABLE_NV:
+        if (eglStreamAcquireImageNV(m_display, m_eglStream, &m_eglImage, EGL_NO_SYNC))
+            return m_eglImage;
+        break;
+
+    default:
+        break;
+    }
+
+    return EGL_NO_IMAGE;
 }
 
 bool EGLConsumerStream::releaseFrame() const noexcept
 {
-    return eglStreamConsumerReleaseKHR(m_display, m_eglStream);
+    if (!m_eglImage)
+        return false;
+
+    return eglStreamReleaseImageNV(m_display, m_eglStream, m_eglImage, EGL_NO_SYNC);
 }
 
 std::unique_ptr<EGLProducerStream> EGLProducerStream::createEGLStream(EGLDisplay display, EGLContext ctx, EGLint width,

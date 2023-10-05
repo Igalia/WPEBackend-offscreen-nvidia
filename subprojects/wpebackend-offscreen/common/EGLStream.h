@@ -79,9 +79,7 @@ class EGLConsumerStream final : public EGLStream
 
     void closeStreamFD() noexcept;
 
-    bool bindStreamToCurrentExternalTexture() const noexcept;
-
-    bool acquireFrame() const noexcept;
+    EGLImage acquireFrame() noexcept;
     bool releaseFrame() const noexcept;
 
   private:
@@ -90,6 +88,7 @@ class EGLConsumerStream final : public EGLStream
     }
 
     int m_streamFD = -1;
+    EGLImage m_eglImage = EGL_NO_IMAGE;
 };
 
 class EGLProducerStream final : public EGLStream

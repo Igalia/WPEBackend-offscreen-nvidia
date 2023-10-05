@@ -40,7 +40,7 @@ WebKitWebViewBackend* createWebViewBackend(const NativeSurface& nativeSurface)
                 wpe_offscreen_view_backend_dispatch_frame_complete(backend);
             }),
         const_cast<void*>(reinterpret_cast<const void*>(&nativeSurface)), nativeSurface.getWidth(),
-        nativeSurface.getHeight(), nativeSurface.getNativeDisplay());
+        nativeSurface.getHeight());
 
     return webkit_web_view_backend_new(wpe_offscreen_view_backend_get_wpe_backend(offscreenBackend), nullptr, nullptr);
 }
