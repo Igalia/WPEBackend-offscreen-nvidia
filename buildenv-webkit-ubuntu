@@ -76,6 +76,12 @@ function prepare_sources
                 for PATCH_FILE in $(ls $PATCH_DIR/*.patch); do
                     patch -d $BASE_DIR/sources/$WPEWEBKIT -f -l -p1 < $PATCH_FILE
                 done
+
+                if [ "$MESON_BUILD_TYPE" != "release" ]; then
+                    for PATCH_FILE in $(ls $PATCH_DIR/*.patch.debug); do
+                        patch -d $BASE_DIR/sources/$WPEWEBKIT -f -l -p1 < $PATCH_FILE
+                    done
+                fi
             fi
         fi
     done
