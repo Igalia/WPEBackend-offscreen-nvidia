@@ -71,37 +71,44 @@ int main(int /*argc*/, const char* /*argv*/[])
 {
     g_setenv("WPE_BACKEND_LIBRARY", "libwpebackend-offscreen-nvidia.so", TRUE);
 
-    auto nativeSurface = NativeSurface::createNativeSurface(800, 600);
-    if (!nativeSurface)
+    struct App
+    {
+        std::unique_ptr<NativeSurface> nativeSurface;
+        GMainLoop* mainLoop;
+        WebKitWebView* wkWebView;
+        int urlIndex;
+    } app = {};
+
+    app.nativeSurface = NativeSurface::createNativeSurface(800, 600);
+    if (!app.nativeSurface)
         return -1;
 
-    auto* mainLoop = g_main_loop_new(nullptr, FALSE);
+    app.mainLoop = g_main_loop_new(nullptr, FALSE);
+    app.wkWebView = createWebView(*app.nativeSurface);
 
-    struct Config
-    {
-        NativeSurface& surface;
-        GMainLoop* mainLoop;
-    } config = {*nativeSurface, mainLoop};
-    g_timeout_add(
-        200,
-        +[](gpointer userData) -> gboolean {
-            Config* data = reinterpret_cast<Config*>(userData);
-            if (data->surface.isClosed())
-                g_main_loop_quit(data->mainLoop);
-            return G_SOURCE_CONTINUE;
-        },
-        &config);
+    g_timeout_add(200, G_SOURCE_FUNC(+[](App* data) -> gboolean {
+                      if (data->nativeSurface->isClosed())
+                          g_main_loop_quit(data->mainLoop);
+                      return G_SOURCE_CONTINUE;
+                  }),
+                  &app);
 
-    auto* wkWebView = createWebView(*nativeSurface);
-    // webkit_web_view_load_uri(wkWebView, "https://webglsamples.org/dynamic-cubemap/dynamic-cubemap.html");
-    // webkit_web_view_load_uri(wkWebView, "https://webglsamples.org/electricflower/electricflower.html");
-    // webkit_web_view_load_uri(wkWebView, "https://webglsamples.org/field/field.html");
-    // webkit_web_view_load_uri(wkWebView, "https://webglsamples.org/aquarium/aquarium.html");
-    webkit_web_view_load_uri(wkWebView, "https://alteredqualia.com/three/examples/webgl_terrain_dynamic.html");
+    static constexpr const char* const URLS[] = {"https://webglsamples.org/dynamic-cubemap/dynamic-cubemap.html",
+                                                 "https://webglsamples.org/electricflower/electricflower.html",
+                                                 "https://webglsamples.org/field/field.html",
+                                                 "https://webglsamples.org/aquarium/aquarium.html"};
+    static constexpr int NB_URLS = sizeof(URLS) / sizeof(URLS[0]);
 
-    g_main_loop_run(mainLoop);
+    g_timeout_add_seconds(20, G_SOURCE_FUNC(+[](App* data) -> gboolean {
+                              webkit_web_view_load_uri(data->wkWebView, URLS[++data->urlIndex % NB_URLS]);
+                              return G_SOURCE_CONTINUE;
+                          }),
+                          &app);
+    webkit_web_view_load_uri(app.wkWebView, URLS[app.urlIndex]);
 
-    g_main_loop_unref(mainLoop);
-    g_object_unref(wkWebView);
+    g_main_loop_run(app.mainLoop);
+
+    g_main_loop_unref(app.mainLoop);
+    g_object_unref(app.wkWebView);
     return 0;
 }
