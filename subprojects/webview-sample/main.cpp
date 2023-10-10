@@ -70,6 +70,8 @@ WebKitWebView* createWebView(const NativeSurface& nativeSurface)
 int main(int /*argc*/, const char* /*argv*/[])
 {
     g_setenv("WPE_BACKEND_LIBRARY", "libwpebackend-offscreen-nvidia.so", TRUE);
+    g_setenv("GST_GL_PLATFORM", "egl", TRUE);
+    g_setenv("GST_GL_API", "gles2", TRUE);
 
     struct App
     {
