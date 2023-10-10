@@ -11,14 +11,14 @@ if cc.has_function('webkit_settings_set_enable_websecurity', dependencies: wpewe
     build_args += '-DHAS_WEB_SECURITY'
 endif
 
-wpebackendoffscreen_dep = dependency('wpebackend-offscreen',
-                                      fallback: ['wpebackend-offscreen', 'wpebackendoffscreen_dep'],
-                                      required: true)
+wpebackendoffscreennvidia_dep = dependency('wpebackend-offscreen-nvidia',
+                                           fallback: ['wpebackend-offscreen-nvidia', 'wpebackendoffscreennvidia_dep'],
+                                           required: true)
 
 egl_dep = dependency('egl', version: '>=1.5', required: true)
 glesv2_dep = dependency('glesv2', version: '>=3.0', required: true)
 x11_dep = dependency('x11', required: true)
-build_deps = [wpewebkit_dep, wpebackendoffscreen_dep, egl_dep, glesv2_dep, x11_dep]
+build_deps = [wpewebkit_dep, wpebackendoffscreennvidia_dep, egl_dep, glesv2_dep, x11_dep]
 
 build_src = [
     'main.cpp',

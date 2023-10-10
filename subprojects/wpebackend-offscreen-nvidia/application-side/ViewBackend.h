@@ -28,25 +28,25 @@
 
 #include "../common/EGLStream.h"
 #include "../common/ipc.h"
-#include "../wpebackend-offscreen.h"
+#include "../wpebackend-offscreen-nvidia.h"
 
 #include <condition_variable>
 #include <mutex>
 #include <thread>
 
-struct wpe_offscreen_view_backend
+struct wpe_offscreen_nvidia_view_backend
 {
     // Empty struct used to hide the internal implementation from the public C interface
 };
 
-class ViewBackend final : public wpe_offscreen_view_backend, private IPC::MessageHandler
+class ViewBackend final : public wpe_offscreen_nvidia_view_backend, private IPC::MessageHandler
 {
   public:
     static wpe_view_backend_interface* getWPEInterface() noexcept;
 
     struct ViewParams
     {
-        wpe_offscreen_on_frame_available_callback onFrameAvailableCB;
+        wpe_offscreen_nvidia_on_frame_available_callback onFrameAvailableCB;
         void* userData;
         uint32_t width;
         uint32_t height;

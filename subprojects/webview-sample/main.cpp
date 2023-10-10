@@ -27,22 +27,23 @@
 #include "NativeSurface.h"
 
 #include <wpe/webkit.h>
-#include <wpebackend-offscreen.h>
+#include <wpebackend-offscreen-nvidia.h>
 
 namespace
 {
 WebKitWebViewBackend* createWebViewBackend(const NativeSurface& nativeSurface)
 {
-    auto* offscreenBackend = wpe_offscreen_view_backend_create(
-        reinterpret_cast<wpe_offscreen_on_frame_available_callback>(
-            +[](wpe_offscreen_view_backend* backend, EGLImage frame, const NativeSurface* nativeSurface) {
+    auto* offscreenBackend = wpe_offscreen_nvidia_view_backend_create(
+        reinterpret_cast<wpe_offscreen_nvidia_on_frame_available_callback>(
+            +[](wpe_offscreen_nvidia_view_backend* backend, EGLImage frame, const NativeSurface* nativeSurface) {
                 nativeSurface->draw(frame);
-                wpe_offscreen_view_backend_dispatch_frame_complete(backend);
+                wpe_offscreen_nvidia_view_backend_dispatch_frame_complete(backend);
             }),
         const_cast<void*>(reinterpret_cast<const void*>(&nativeSurface)), nativeSurface.getWidth(),
         nativeSurface.getHeight());
 
-    return webkit_web_view_backend_new(wpe_offscreen_view_backend_get_wpe_backend(offscreenBackend), nullptr, nullptr);
+    return webkit_web_view_backend_new(wpe_offscreen_nvidia_view_backend_get_wpe_backend(offscreenBackend), nullptr,
+                                       nullptr);
 }
 
 WebKitWebView* createWebView(const NativeSurface& nativeSurface)
@@ -68,7 +69,7 @@ WebKitWebView* createWebView(const NativeSurface& nativeSurface)
 
 int main(int /*argc*/, const char* /*argv*/[])
 {
-    g_setenv("WPE_BACKEND_LIBRARY", "libwpebackend-offscreen.so", TRUE);
+    g_setenv("WPE_BACKEND_LIBRARY", "libwpebackend-offscreen-nvidia.so", TRUE);
 
     auto nativeSurface = NativeSurface::createNativeSurface(800, 600);
     if (!nativeSurface)

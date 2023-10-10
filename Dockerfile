@@ -54,12 +54,12 @@ RUN cd /root/$LIBWPE && \
           -DENABLE_WPEBACKEND_FDO_AUDIO_EXTENSION=OFF && \
     ninja -C build install
 
-COPY ./subprojects/wpebackend-offscreen ./wpebackend-offscreen
-RUN cd /root/wpebackend-offscreen && \
+COPY ./subprojects/wpebackend-offscreen-nvidia ./wpebackend-offscreen-nvidia
+RUN cd /root/wpebackend-offscreen-nvidia && \
     meson setup build --buildtype=$MESON_BUILDTYPE --prefix=/usr && \
     ninja -C build install && \
     cd /usr/lib/x86_64-linux-gnu && \
-    ln -s libwpebackend-offscreen.so libWPEBackend-default.so
+    ln -s libwpebackend-offscreen-nvidia.so libWPEBackend-default.so
 
 ################################################################################
 # webview-sample
@@ -90,11 +90,11 @@ RUN apt-get update -qq && \
 
 COPY --from=webview-builder /usr/include/wpe-1.0 /usr/include/wpe-1.0
 COPY --from=webview-builder /usr/include/wpe-webkit-1.0 /usr/include/wpe-webkit-1.0
-COPY --from=webview-builder /usr/include/wpebackend-offscreen.h /usr/include/
+COPY --from=webview-builder /usr/include/wpebackend-offscreen-nvidia.h /usr/include/
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/wpe-webkit-1.0 /usr/lib/x86_64-linux-gnu/wpe-webkit-1.0
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/pkgconfig/wpe*.pc /usr/lib/x86_64-linux-gnu/pkgconfig/
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libwpe-1.0.so* /usr/lib/x86_64-linux-gnu/
-COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libwpebackend-offscreen.so /usr/lib/x86_64-linux-gnu/
+COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libwpebackend-offscreen-nvidia.so /usr/lib/x86_64-linux-gnu/
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libWPEBackend-default.so /usr/lib/x86_64-linux-gnu/
 COPY --from=webview-builder /usr/lib/x86_64-linux-gnu/libWPEWebKit-1.0.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=webview-builder /usr/libexec/wpe-webkit-1.0 /usr/libexec/wpe-webkit-1.0

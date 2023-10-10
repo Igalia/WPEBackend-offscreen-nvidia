@@ -34,19 +34,19 @@ extern "C"
 {
 #endif
 
-    struct wpe_offscreen_view_backend;
-    typedef void (*wpe_offscreen_on_frame_available_callback)(struct wpe_offscreen_view_backend* offscreen_backend,
-                                                              EGLImage frame, void* user_data);
+    struct wpe_offscreen_nvidia_view_backend;
+    typedef void (*wpe_offscreen_nvidia_on_frame_available_callback)(
+        struct wpe_offscreen_nvidia_view_backend* offscreen_backend, EGLImage frame, void* user_data);
 
-    // The returned wpe_offscreen_view_backend pointer is also stored into the interface_data field of the
+    // The returned wpe_offscreen_nvidia_view_backend pointer is also stored into the interface_data field of the
     // associated wpe_view_backend_base, so it is automatically destroyed when calling wpe_view_backend_destroy.
-    struct wpe_offscreen_view_backend* wpe_offscreen_view_backend_create(wpe_offscreen_on_frame_available_callback cb,
-                                                                         void* user_data, uint32_t width,
-                                                                         uint32_t height);
+    struct wpe_offscreen_nvidia_view_backend* wpe_offscreen_nvidia_view_backend_create(
+        wpe_offscreen_nvidia_on_frame_available_callback cb, void* user_data, uint32_t width, uint32_t height);
 
-    struct wpe_view_backend* wpe_offscreen_view_backend_get_wpe_backend(
-        struct wpe_offscreen_view_backend* offscreen_backend);
-    void wpe_offscreen_view_backend_dispatch_frame_complete(struct wpe_offscreen_view_backend* offscreen_backend);
+    struct wpe_view_backend* wpe_offscreen_nvidia_view_backend_get_wpe_backend(
+        struct wpe_offscreen_nvidia_view_backend* offscreen_backend);
+    void wpe_offscreen_nvidia_view_backend_dispatch_frame_complete(
+        struct wpe_offscreen_nvidia_view_backend* offscreen_backend);
 
 #ifdef __cplusplus
 }

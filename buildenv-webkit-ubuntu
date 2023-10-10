@@ -151,7 +151,7 @@ export __NV_PRIME_RENDER_OFFLOAD=1
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
 export __GL_SYNC_TO_VBLANK=1
 
-export LD_LIBRARY_PATH=$(readlink -mn $BASE_DIR/../build/subprojects/wpebackend-offscreen)
+export LD_LIBRARY_PATH=$(readlink -mn $BASE_DIR/../build/subprojects/wpebackend-offscreen-nvidia)
 cd $BASE_DIR/..
 $SHELL
 

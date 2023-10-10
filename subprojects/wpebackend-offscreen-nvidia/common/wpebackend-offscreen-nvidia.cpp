@@ -24,7 +24,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "../wpebackend-offscreen.h"
+#include "../wpebackend-offscreen-nvidia.h"
 
 #include "../application-side/RendererHost.h"
 #include "../application-side/ViewBackend.h"
@@ -92,22 +92,22 @@ extern "C"
         nullptr, nullptr, nullptr, nullptr};
 }
 
-__attribute__((visibility("default"))) wpe_offscreen_view_backend* wpe_offscreen_view_backend_create(
-    wpe_offscreen_on_frame_available_callback cb, void* user_data, uint32_t width, uint32_t height)
+__attribute__((visibility("default"))) wpe_offscreen_nvidia_view_backend* wpe_offscreen_nvidia_view_backend_create(
+    wpe_offscreen_nvidia_on_frame_available_callback cb, void* user_data, uint32_t width, uint32_t height)
 {
     ViewBackend::ViewParams viewParams = {cb, user_data, width, height};
     wpe_view_backend_create_with_backend_interface(ViewBackend::getWPEInterface(), &viewParams);
-    return static_cast<wpe_offscreen_view_backend*>(viewParams.userData);
+    return static_cast<wpe_offscreen_nvidia_view_backend*>(viewParams.userData);
 }
 
-__attribute__((visibility("default"))) wpe_view_backend* wpe_offscreen_view_backend_get_wpe_backend(
-    wpe_offscreen_view_backend* offscreen_backend)
+__attribute__((visibility("default"))) wpe_view_backend* wpe_offscreen_nvidia_view_backend_get_wpe_backend(
+    wpe_offscreen_nvidia_view_backend* offscreen_backend)
 {
     return static_cast<ViewBackend*>(offscreen_backend)->getWPEViewBackend();
 }
 
-__attribute__((visibility("default"))) void wpe_offscreen_view_backend_dispatch_frame_complete(
-    wpe_offscreen_view_backend* offscreen_backend)
+__attribute__((visibility("default"))) void wpe_offscreen_nvidia_view_backend_dispatch_frame_complete(
+    wpe_offscreen_nvidia_view_backend* offscreen_backend)
 {
     static_cast<ViewBackend*>(offscreen_backend)->frameComplete();
 }
