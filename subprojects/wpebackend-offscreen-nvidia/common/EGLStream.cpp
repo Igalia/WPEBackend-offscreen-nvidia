@@ -182,7 +182,10 @@ EGLImage EGLConsumerStream::acquireFrame() noexcept
 {
     EGLenum event = 0;
     EGLAttrib data = 0;
-    if (!eglQueryStreamConsumerEventNV(m_display, m_eglStream, ACQUIRE_MAX_TIMEOUT_USEC * 1000, &event, &data))
+    // WARNING: specifications state that the timeout is in nanoseconds
+    // (see: https://registry.khronos.org/EGL/extensions/NV/EGL_NV_stream_consumer_eglimage.txt)
+    // but in reality it is in microseconds (at least with the version 535.113.01 of the NVidia drivers)
+    if (!eglQueryStreamConsumerEventNV(m_display, m_eglStream, ACQUIRE_MAX_TIMEOUT_USEC, &event, &data))
         return EGL_NO_IMAGE;
 
     switch (event)

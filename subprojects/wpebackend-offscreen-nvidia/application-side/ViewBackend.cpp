@@ -189,8 +189,8 @@ void ViewBackend::consumerThreadFunc() noexcept
         m_availableFrame = frame;
 
         std::unique_lock<std::mutex> lock(m_consumerMutex);
-        m_fetchNextFrame = false;
         m_consumerCondition.wait(lock, [this] { return m_fetchNextFrame; });
+        m_fetchNextFrame = false;
 
         m_consumerStream->releaseFrame();
     }
